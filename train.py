@@ -3,8 +3,8 @@ import torch.nn as nn
 import torch.optim as optim
 import random
 from network import Encoder, Decoder, Seq2Seq
-# from dataset import SRC, TRG, SRC_PAD_IDX, TRG_PAD_IDX, train_iterator, valid_iterator
 from dataset import CustomDataset, iterator, WordTranslationDataset, word_translation_iterator
+from torch.autograd import Variable
 
 # set random seeds for reproducibility
 SEED = 1234
@@ -39,9 +39,10 @@ BATCH_SIZE = 128
 N_EPOCHS = 10
 CLIP = 1
 
-train_loader = word_translation_iterator(train_data, src_vocab_train, tgt_vocab_train)
-valid_loader = word_translation_iterator(valid_data, src_vocab_valid, tgt_vocab_valid)
-test_loader = word_translation_iterator(test_data, src_vocab_test, tgt_vocab_test)
+train_loader = word_translation_iterator(train_data, src_vocab_train, tgt_vocab_train, src_word_to_idx_train, tgt_word_to_idx_train, batch_size=BATCH_SIZE)
+valid_loader = word_translation_iterator(valid_data, src_vocab_valid, tgt_vocab_valid, src_word_to_idx_valid, tgt_word_to_idx_valid, batch_size=BATCH_SIZE)
+test_loader = word_translation_iterator(test_data, src_vocab_test, tgt_vocab_test, src_word_to_idx_test, tgt_word_to_idx_test, batch_size=BATCH_SIZE)
+
 
 # # define the iterators
 # train_iterator = iterator(src_tensors, tgt_tensors, BATCH_SIZE)
@@ -70,18 +71,10 @@ def train(model, iterator, optimizer, criterion, clip):
     epoch_loss = 0
     epoch_acc = 0
     for i, batch in enumerate(iterator):
-        print("Size of batch: ", len(batch))
-        print("This is the batch: ")
-        print(batch)
         src = batch[0]
         trg = batch[1]
-        print("Type of trg: ", type(trg))
-        print("Size of trg: ", trg.shape)
-        print("Size of src: ", src.shape)
         src = src.unsqueeze(0)
         trg = trg.unsqueeze(0)
-        print("Size of trg: ", trg.shape)
-        print("Size of src: ", src.shape)
         optimizer.zero_grad()
         output = model(src, trg)
         # output = [trg len, batch size, output dim]
@@ -89,6 +82,7 @@ def train(model, iterator, optimizer, criterion, clip):
         output = output[1:].view(-1, output_dim)
         trg = trg[1:].view(-1)
         loss = criterion(output, trg)
+        loss = Variable(loss, requires_grad = True)
         acc = calculate_accuracy(output, trg)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), clip)
@@ -104,8 +98,10 @@ def evaluate(model, iterator, criterion):
     epoch_acc = 0
     with torch.no_grad():
         for i, batch in enumerate(iterator):
-            src = batch.src
-            trg = batch.trg
+            src = batch[0]
+            trg = batch[1]
+            src = src.unsqueeze(0)
+            trg = trg.unsqueeze(0)
             output = model(src, trg, teacher_forcing_ratio=0.0)
             # output = [trg len, batch size, output dim]
             output_dim = output.shape[-1]
@@ -123,10 +119,9 @@ CLIP = 1
 best_valid_loss = float('inf')
 for epoch in range(N_EPOCHS):
     train_loss = train(model, train_loader, optimizer, criterion, CLIP)
-    valid_loss = evaluate(model, valid_loader, criterion)
+    valid_loss, valid_accuracy = evaluate(model, valid_loader, criterion)
     if valid_loss < best_valid_loss:
         best_valid_loss = valid_loss
         torch.save(model.state_dict(), 'tut3-model.pt')
-    print(f'Epoch: {epoch+1:02} | Train Loss: {train_loss:.3f} | Val. Loss: {valid_loss:.3f}')
-
+    print(f'Epoch: {epoch+1} | Train Loss: {train_loss:.3f} | Val. Loss: {valid_loss:.3f} | Val. Acc: {valid_accuracy*100:.2f}')
 

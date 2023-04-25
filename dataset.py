@@ -34,7 +34,7 @@ class CustomDataset(Dataset):
         vocab = set()
         for word in data.str.split(' '): 
             vocab.add(word[0])
-        word_to_index = {'<pad>': 0, '<unk>': 1}
+        word_to_index = {'<PAD>': 0, '<UNK>': 1}
         word_to_index = {word: index+2 for index, word in enumerate(vocab)}
         index_to_word = {index: word for word, index in word_to_index.items()}
         return vocab, word_to_index, index_to_word
@@ -67,22 +67,36 @@ class CustomDataset(Dataset):
     
 
 class WordTranslationDataset(Dataset):
-    def __init__(self, data, src_vocab, tgt_vocab):
+    def __init__(self, data, src_vocab, tgt_vocab, src_word_to_index, tgt_word_to_index):
         self.data = data
         self.src_vocab = src_vocab
         self.tgt_vocab = tgt_vocab
+        self.src_word_to_index = src_word_to_index
+        self.tgt_word_to_index = tgt_word_to_index
 
     def __len__(self):
         return len(self.data)
 
     def __getitem__(self, index):
-        src_word, tgt_word = self.data[index]
-        src_idx = [self.src_vocab.get(word, self.src_vocab['<UNK>']) for word in src_word.split()]
-        tgt_idx = [self.tgt_vocab.get(word, self.tgt_vocab['<UNK>']) for word in tgt_word.split()]
-        return src_idx, tgt_idx
+        print("Here is the problem")
+        print("My type: ", type(self.data))
+        print("Length of data: ", len(self.data))
+        print("This is the index: ", index)
+        print("\n\n\n\n")
+        row = self.data.iloc[index]
+        src_word, tgt_word = row['text'], row['label']
+        # src_idx = [self.src_vocab.get(src_word, self.src_vocab['<UNK>'])]
+        # src_idx = next((i for i, x in enumerate(self.src_vocab) if x == src_word), 1)
+        src_idx = self.src_word_to_index[src_word]
+        tgt_idx = self.tgt_word_to_index[tgt_word]
+        # tgt_idx = [self.tgt_vocab.get(tgt_word, self.tgt_vocab['<UNK>'])]
+        # tgt_idx = next((i for i, x in enumerate(self.tgt_vocab) if x == tgt_word), 1)
 
-def word_translation_iterator(data, src_vocab, tgt_vocab, batch_size=32, shuffle=True):
-    dataset = WordTranslationDataset(data, src_vocab, tgt_vocab)
+        return src_idx, tgt_idx
+        # return src_word, tgt_word
+
+def word_translation_iterator(data, src_vocab, tgt_vocab, src_word_to_idx, tgt_word_to_idx, batch_size=32, shuffle=True):
+    dataset = WordTranslationDataset(data, src_vocab, tgt_vocab, src_word_to_idx, tgt_word_to_idx)
     return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
 
 
