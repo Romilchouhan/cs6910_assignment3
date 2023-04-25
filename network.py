@@ -5,11 +5,19 @@ import torch.optim as optim
 class Encoder(nn.Module):
     def __init__(self, input_dim, emb_dim, hid_dim, n_layers, dropout):
         super().__init__()
-        self.embedding = nn.Embedding(input_dim, emb_dim)
+        self.input_dim = input_dim
+        self.embedding = nn.Embedding(self.input_dim + 1, emb_dim)
         self.rnn = nn.GRU(emb_dim, hid_dim, num_layers=n_layers, dropout=dropout)
 
     def forward(self, src):
         # src = [src len, batch size]
+        # print("To check the shape of src: ", src.shape)
+        # calculate maximum value of src tensor
+        maximum = torch.max(src)
+        print("type of self.input_dim: ", type(self.input_dim))
+        print("type of maximum: ", type(maximum))
+        if (maximum > self.input_dim): 
+            print("The max value of src is: ", max(src))
         embedded = self.embedding(src)
         # embedded = [src len, batch size, emb dim]
         outputs, hidden = self.rnn(embedded)

@@ -78,22 +78,12 @@ class WordTranslationDataset(Dataset):
         return len(self.data)
 
     def __getitem__(self, index):
-        print("Here is the problem")
-        print("My type: ", type(self.data))
-        print("Length of data: ", len(self.data))
-        print("This is the index: ", index)
-        print("\n\n\n\n")
         row = self.data.iloc[index]
         src_word, tgt_word = row['text'], row['label']
-        # src_idx = [self.src_vocab.get(src_word, self.src_vocab['<UNK>'])]
-        # src_idx = next((i for i, x in enumerate(self.src_vocab) if x == src_word), 1)
         src_idx = self.src_word_to_index[src_word]
         tgt_idx = self.tgt_word_to_index[tgt_word]
-        # tgt_idx = [self.tgt_vocab.get(tgt_word, self.tgt_vocab['<UNK>'])]
-        # tgt_idx = next((i for i, x in enumerate(self.tgt_vocab) if x == tgt_word), 1)
 
         return src_idx, tgt_idx
-        # return src_word, tgt_word
 
 def word_translation_iterator(data, src_vocab, tgt_vocab, src_word_to_idx, tgt_word_to_idx, batch_size=32, shuffle=True):
     dataset = WordTranslationDataset(data, src_vocab, tgt_vocab, src_word_to_idx, tgt_word_to_idx)
