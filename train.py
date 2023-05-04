@@ -3,11 +3,13 @@ import torch.nn as nn
 import torch.optim as optim
 import random
 from network import Encoder, Decoder, Seq2Seq
-from dataset import CustomDataset, iterator, WordTranslationDataset, word_translation_iterator
+from dataset import CustomDataset, WordTranslationDataset, word_translation_iterator
 from torch.autograd import Variable
 import time
 import atexit
 from tqdm import tqdm
+import warnings
+warnings.filterwarnings("ignore")
 
 start_time = time.time()
 
@@ -33,10 +35,6 @@ src_vocab_valid, src_word_to_idx_valid, src_idx_to_word_valid = dataset.create_v
 tgt_vocab_valid, tgt_word_to_idx_valid, tgt_idx_to_word_valid = dataset.create_vocab(valid_data['label'])
 src_vocab_test, src_word_to_idx_test, src_idx_to_word_test = dataset.create_vocab(test_data['text'])
 tgt_vocab_test, tgt_word_to_idx_test, tgt_idx_to_word_test = dataset.create_vocab(test_data['label'])
-
-# src_tensors_train, tgt_tensors_train, src_vocab_train, tgt_vocab_train, src_word_to_idx_train, tgt_word_to_idx_train, src_idx_to_word_train, tgt_idx_to_word_train = dataset.create_vocab(train_data)
-# src_tensors_valid, tgt_tensors_valid, src_vocab_valid, tgt_vocab_valid, src_word_to_idx_valid, tgt_word_to_idx_valid, src_idx_to_word_valid, tgt_idx_to_word_valid = dataset.create_vocab(train_data)
-# src_tensors_test, tgt_tensors_test, src_vocab_test, tgt_vocab_test, src_word_to_idx_test, tgt_word_to_idx_test, src_idx_to_word_test, tgt_idx_to_word_test = dataset.create_vocab(train_data)
 
 # print the size of the source vocabulary
 print("Source vocabulary size: ", len(src_vocab_train))
@@ -87,15 +85,23 @@ def train(model, iterator, optimizer, criterion, clip):
     for i, batch in enumerate(tqdm(iterator)):
         src = batch[0]
         trg = batch[1]
-        src = src.unsqueeze(0)
-        trg = trg.unsqueeze(0)
+        # src = src.unsqueeze(0)
+        # trg = trg.unsqueeze(0)
+        # swap the axes to match the input format
+        src = src.permute(1, 0)
+        trg = trg.permute(1, 0)
+        print("The shape of src is: ", src.shape)
+        print("The shape of trg is: ", trg.shape)
         # print the shape and values of src and trg
         optimizer.zero_grad()
+        print("The shape of src is: ", src.shape)
+        print("The shape of trg is: ", trg.shape)
+        print("Now this is the INPUT_DIM: ", INPUT_DIM)
         output = model(src, trg)
         # output = [trg len, batch size, output dim]
         output_dim = output.shape[-1]
         output = output[1:].view(-1, output_dim)
-        trg = trg[1:].view(-1)
+        trg = trg[1:].reshape(-1)
         print("The shape of output is: ", output.shape)
         print("The shape of trg is: ", trg.shape)
         loss = criterion(output, trg)

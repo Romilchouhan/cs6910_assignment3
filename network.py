@@ -3,6 +3,8 @@ import torch.nn as nn
 import torch.optim as optim
 
 class Encoder(nn.Module):
+    '''
+    input_dim -> source vocab size'''
     def __init__(self, input_dim, emb_dim, hid_dim, n_layers, dropout):
         super().__init__()
         self.input_dim = input_dim
@@ -11,13 +13,23 @@ class Encoder(nn.Module):
 
     def forward(self, src):
         # src = [src len, batch size]
-        # print("To check the shape of src: ", src.shape)
-        # calculate maximum value of src tensor
-        maximum = torch.max(src)
-        # print("type of self.input_dim: ", type(self.input_dim))
-        # print("type of maximum: ", type(maximum))
+        maximum = 0
+        minimum = 0
+        for i in range(len(src)):
+            for j in range(len(src[i])):
+                if src[i][j] > maximum:
+                    maximum = src[i][j]
+                if src[i][j] < minimum:
+                    minimum = src[i][j]
+
         if (maximum > self.input_dim): 
-            print("The max value of src is: ", max(src))
+            print("The max value of src is: ", maximum)
+
+        # also print the min value of src
+        # minimum = min(src)
+        if (minimum < 0):
+            print("The min value of src is: ", minimum)
+
         embedded = self.embedding(src)
         # embedded = [src len, batch size, emb dim]
         outputs, hidden = self.rnn(embedded)
