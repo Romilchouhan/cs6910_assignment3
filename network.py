@@ -14,8 +14,8 @@ class Encoder(nn.Module):
         # print("To check the shape of src: ", src.shape)
         # calculate maximum value of src tensor
         maximum = torch.max(src)
-        print("type of self.input_dim: ", type(self.input_dim))
-        print("type of maximum: ", type(maximum))
+        # print("type of self.input_dim: ", type(self.input_dim))
+        # print("type of maximum: ", type(maximum))
         if (maximum > self.input_dim): 
             print("The max value of src is: ", max(src))
         embedded = self.embedding(src)

@@ -13,10 +13,11 @@ path = './aksharantar_sampled'
 # Write a class for custom dataset loading for text data
 class CustomDataset(Dataset):
     """Custom Dataset for loading Indian Language text data."""
-    def __init__(self, path=path, source_lang='en', target_lang='hin', **kwargs):
+    def __init__(self, max_size, path=path, source_lang='en', target_lang='hin', **kwargs):
         self.data_dir = path
         self.source_lang = source_lang
         self.target_lang = target_lang
+        self.max_size = max_size
         self.init_dataset()
 
     def init_dataset(self):
@@ -27,31 +28,32 @@ class CustomDataset(Dataset):
         self.valid_data = self.read_data(self.valid_dir)
         self.test_data = self.read_data(self.test_dir)
         self.data = self.train_data
-        # self.labels = self.train_data.label.values
         return self.train_data, self.valid_data, self.test_data
 
-    def create_vocab(self, data, min_freq=2):
+    def create_vocab(self, data):
         vocab = set()
-        for word in data.str.split(' '): 
-            vocab.add(word[0])
-        word_to_index = {'<PAD>': 0, '<UNK>': 1}
-        word_to_index = {word: index+2 for index, word in enumerate(vocab)}
+        for word in data.str.split():
+            # add every letter in the word to the vocab
+            for letter in word[0]:
+                vocab.add(letter)
+
+        word_to_index = {'<PAD>': 0, '<SOS>': 1, '<EOS>': 2, '<UNK>': 3}
+        # add the words to the vocab 
+        for index, word in enumerate(vocab):
+            word_to_index[word] = index+4
+
         index_to_word = {index: word for word, index in word_to_index.items()}
         return vocab, word_to_index, index_to_word
 
-    def preprocess_data(self, data):
-        src_vocab, src_word_to_index, src_index_to_word = self.create_vocab(data['text'])
-        tgt_vocab, tgt_word_to_index, tgt_index_to_word = self.create_vocab(data['label'])
-
-        # Convert the text data to tensors
-        src_tensor = self.text_to_tensor(data['text'], src_word_to_index)
-        tgt_tensor = self.text_to_tensor(data['label'], tgt_word_to_index)
-        return src_tensor, tgt_tensor, src_vocab, tgt_vocab, src_word_to_index, tgt_word_to_index, src_index_to_word, tgt_index_to_word
-
     def text_to_tensor(self, data, word_to_index):
+        totensor = []  # list of letters to be converted to tensor
         # Convert the text data to tensors
-        src_tensor = torch.tensor([word_to_index[word] for word in data])
-        return src_tensor
+        for word in data:
+            for letter in word:
+                if letter not in word_to_index:
+                    letter = '<UNK>'
+                totensor.append(word_to_index[letter])
+        return totensor
 
     def read_data(self, file):
         # Read the csv file and return a dataframe
@@ -78,29 +80,38 @@ class WordTranslationDataset(Dataset):
         return len(self.data)
 
     def __getitem__(self, index):
+        """Returns all the letters in the word"""
         row = self.data.iloc[index]
         src_word, tgt_word = row['text'], row['label']
-        src_idx = self.src_word_to_index[src_word]
-        tgt_idx = self.tgt_word_to_index[tgt_word]
+        print("This is the source word: ", src_word)
+        print("This is the target word: ", tgt_word)
 
-        return src_idx, tgt_idx
+        # extract all the letters from the src_word and tgt_word
+        print("This is src_word_to_index: ", self.src_word_to_index)
+        src_tensor = [self.src_word_to_index['<SOS>']]
+        src_tensor += self.text_to_tensor(src_word, self.src_word_to_index)  
+        src_tensor.append(self.src_word_to_index['<EOS>'])
+
+        tgt_tensor = [self.tgt_word_to_index['<SOS>']]
+        tgt_tensor += self.text_to_tensor(tgt_word, self.tgt_word_to_index)
+        tgt_tensor.append(self.tgt_word_to_index['<EOS>'])
+
+        return torch.tensor(src_tensor, dtype=torch.long), torch.tensor(tgt_tensor, dtype=torch.long)
+
+    def text_to_tensor(self, data, word_to_index):
+        totensor = []  # list of letters to be converted to tensor
+        # Convert the text data to tensors
+        for word in data:
+            for letter in word:
+                if letter not in word_to_index:
+                    letter = '<UNK>'
+                totensor.append(word_to_index[letter])
+        # src_tensor = torch.tensor(totensor, dtype=torch.long)
+        return totensor
 
 def word_translation_iterator(data, src_vocab, tgt_vocab, src_word_to_idx, tgt_word_to_idx, batch_size=32, shuffle=True):
     dataset = WordTranslationDataset(data, src_vocab, tgt_vocab, src_word_to_idx, tgt_word_to_idx)
     return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
-
-
-# define a train_iterator 
-def iterator(data, labels, batch_size, shuffle=True):
-    data_size = len(data)
-    num_batches = int(np.ceil(data_size / float(batch_size)))
-    if shuffle:
-        indices = np.random.permutation(np.arange(data_size))
-    for i in range(num_batches):
-        start_index = i * batch_size
-        end_index = min((i + 1) * batch_size, data_size)
-        yield data[indices[start_index:end_index]], labels[indices[start_index:end_index]]
-
 
 
 if __name__ == '__main__':
