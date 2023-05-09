@@ -5,7 +5,7 @@ import pandas as pd
 import torch
 from torch.utils.data import Dataset
 from torch.utils.data import Dataset, DataLoader
-from torch.nn.utils.rnn import pad_sequence
+from torch.nn.utils.rnn import pad_sequence, pack_padded_sequence, pad_packed_sequence, PackedSequence
 from collections import Counter
 
 # Write code for dataset loading 
@@ -97,7 +97,7 @@ class WordTranslationDataset(Dataset):
         tgt_tensor.append(self.tgt_word_to_index['<EOS>'])
 
         return torch.tensor(src_tensor, dtype=torch.long), torch.tensor(tgt_tensor, dtype=torch.long)
-
+    
     def text_to_tensor(self, data, word_to_index):
         totensor = []  # list of letters to be converted to tensor
         # Convert the text data to tensors
@@ -108,6 +108,31 @@ class WordTranslationDataset(Dataset):
                 totensor.append(word_to_index[letter])
         # src_tensor = torch.tensor(totensor, dtype=torch.long)
         return totensor
+
+
+
+# class ValidationDataset(Dataset):
+#     def __init__(self, data) -> None:
+#         super().__init__()
+#         self.data = data
+#         # TODO
+
+#     def __len__(self):
+#         return len(self.data)
+    
+#     def __getitem__(self, index) -> None:
+#         row = self.data.iloc[index]
+#         src_word, tgt_word = row['text'], row['label']
+#         src_tensor = [self.src_word_to_index['<SOS>']]
+#         src_tensor += text_to_tensor(src_word, self.src_word_to_index)
+#         src_tensor.append(self.src_word_to_index['<EOS>'])
+
+#         tgt_tensor = [self.tgt_word_to_index['<SOS>']]
+#         tgt_tensor += text_to_tensor(tgt_word, self.tgt_word_to_index)
+#         tgt_tensor.append(self.tgt_word_to_index['<EOS>'])
+
+#         return torch.tensor(src_tensor, dtype=torch.long), torch.tensor(tgt_tensor, dtype=torch.long)
+
 
 ################# Collate fn ############################
 class MyCollate: 
@@ -122,12 +147,10 @@ class MyCollate:
         # get all source indexed sentences of the batch 
         src_batch = [item[0] for item in batch]
         tgt_batch = [item[1] for item in batch]
-
         max_length = max(max(len(src), len(tgt)) for src, tgt in zip(src_batch, tgt_batch))
 
         src_batch = pad_sequence([torch.nn.functional.pad(src, (0, max_length - len(src)), value=0) for src in src_batch], batch_first=True, padding_value=self.pad_idx)
         tgt_batch = pad_sequence([torch.nn.functional.pad(tgt, (0, max_length - len(tgt)), value=0) for tgt in tgt_batch], batch_first=True, padding_value=self.pad_idx)
-
         return src_batch, tgt_batch
 
 
@@ -135,6 +158,7 @@ def word_translation_iterator(data, src_vocab, tgt_vocab, src_word_to_idx, tgt_w
     dataset = WordTranslationDataset(data, src_vocab, tgt_vocab, src_word_to_idx, tgt_word_to_idx)
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, collate_fn=MyCollate(src_word_to_idx['<PAD>']))
     return loader
+
 
 
 if __name__ == '__main__':

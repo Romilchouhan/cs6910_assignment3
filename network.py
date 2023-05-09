@@ -3,8 +3,7 @@ import torch.nn as nn
 import torch.optim as optim
 
 class Encoder(nn.Module):
-    '''
-    input_dim -> source vocab size'''
+    '''input_dim -> source vocab size'''
     def __init__(self, input_dim, emb_dim, hid_dim, n_layers, dropout):
         super().__init__()
         self.input_dim = input_dim
@@ -13,6 +12,7 @@ class Encoder(nn.Module):
 
     def forward(self, src):
         # src = [src len, batch size]
+
         maximum = 0
         minimum = 0
         for i in range(len(src)):

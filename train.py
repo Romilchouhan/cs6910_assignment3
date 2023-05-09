@@ -9,6 +9,7 @@ import time
 import atexit
 from tqdm import tqdm
 import warnings
+import argparse 
 warnings.filterwarnings("ignore")
 
 start_time = time.time()
@@ -22,11 +23,23 @@ torch.backends.cudnn.deterministic = True
 # define device
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-
+# Parse the command line arguments
+parser = argparse.ArgumentParser(description='Seq2Seq Model on Aksharantar Dataset')
+parser.add_argument('--batch_size', type=int, default=128, help='batch size for training')
+parser.add_argument('--epochs', type=int, default=1, help='number of epochs for training')
+parser.add_argument('--lr', type=float, default=0.001, help='learning rate')
+parser.add_argument('--embedding_size', type=int, default=256, help='embedding size for encoder and decoder')
+parser.add_argument('--hidden_size', type=int, default=512, help='hidden size for encoder and decoder')
+parser.add_argument('--num_layers', type=int, default=2, help='number of layers for encoder and decoder')
+parser.add_argument('--dropout', type=float, default=0.5, help='dropout rate for encoder and decoder')
+parser.add_argument('--teacher_forcing_ratio', type=float, default=0.5, help='teacher forcing ratio')
+parser.add_argument('--clip', type=float, default=1.0, help='gradient clipping')
+parser.add_argument('--target_language', type=str, default='hin', help='target language')
+args = parser.parse_args()
 
 # load the data
 PATH = './aksharantar_sampled'
-dataset = CustomDataset(PATH)
+dataset = CustomDataset(PATH, target_lang=args.target_language)
 train_data, valid_data, test_data = dataset.init_dataset()
 # create the vocabulary
 src_vocab_train, src_word_to_idx_train, src_idx_to_word_train = dataset.create_vocab(train_data['text'])
@@ -41,20 +54,21 @@ print("Source vocabulary size: ", len(src_vocab_train))
 print("Target vocabulary size: ", len(tgt_vocab_train))
 
 # define hyperparameters
-INPUT_DIM = len(src_vocab_train) + 1
+INPUT_DIM = len(src_vocab_train)
 OUTPUT_DIM = len(tgt_vocab_train)
-ENC_EMB_DIM = 256
-DEC_EMB_DIM = 256
-HID_DIM = 512
-N_LAYERS = 2
-ENC_DROPOUT = 0.5
-DEC_DROPOUT = 0.5
-BATCH_SIZE = 128
-N_EPOCHS = 10
-CLIP = 1
+ENC_EMB_DIM = args.embedding_size
+DEC_EMB_DIM = args.embedding_size
+HID_DIM = args.hidden_size
+N_LAYERS = args.num_layers
+ENC_DROPOUT = args.dropout
+DEC_DROPOUT = args.dropout
+BATCH_SIZE = args.batch_size
+N_EPOCHS = args.epochs
+CLIP = args.clip
 
 train_loader = word_translation_iterator(train_data, src_vocab_train, tgt_vocab_train, src_word_to_idx_train, tgt_word_to_idx_train, batch_size=BATCH_SIZE)
-valid_loader = word_translation_iterator(valid_data, src_vocab_valid, tgt_vocab_valid, src_word_to_idx_valid, tgt_word_to_idx_valid, batch_size=BATCH_SIZE)
+# valid_loader = word_translation_iterator(valid_data, src_vocab_valid, tgt_vocab_valid, src_word_to_idx_valid, tgt_word_to_idx_valid, batch_size=BATCH_SIZE)
+valid_loader = word_translation_iterator(valid_data, src_vocab_train, tgt_vocab_train, src_word_to_idx_train, tgt_word_to_idx_train, batch_size=BATCH_SIZE)
 test_loader = word_translation_iterator(test_data, src_vocab_test, tgt_vocab_test, src_word_to_idx_test, tgt_word_to_idx_test, batch_size=BATCH_SIZE)
 
 print("Time taken for data loading: ", time.time() - start_time)
@@ -76,42 +90,46 @@ def calculate_accuracy(preds, trg):
     accuracy = (preds.argmax(dim=1) == trg).float().mean()
     return accuracy.item()
 
+def calculate_char_accuracy(preds, trg):
+    preds = torch.argmax(preds, dim=1)  # Get the predicted labels by taking the argmax along the output dimension
+    non_pad_elements = (trg != 0).nonzero()  # Find the indices of non-padding elements in the target tensor
+    correct_chars = preds[non_pad_elements[:, 0]].eq(trg[non_pad_elements[:, 0]]).sum().item()
+    total_chars = non_pad_elements.shape[0]
+    char_accuracy = correct_chars / total_chars
+    return char_accuracy
+
+
+
 # define a function to perform one epoch of training
 def train(model, iterator, optimizer, criterion, clip):
     model.train()
     epoch_loss = 0
     epoch_acc = 0
+    print("THIS IS TRAINING LOOP")
     # use tqdm to show the progress bar    
     for i, batch in enumerate(tqdm(iterator)):
         src = batch[0]
         trg = batch[1]
-        # src = src.unsqueeze(0)
-        # trg = trg.unsqueeze(0)
         # swap the axes to match the input format
         src = src.permute(1, 0)
         trg = trg.permute(1, 0)
-        print("The shape of src is: ", src.shape)
-        print("The shape of trg is: ", trg.shape)
-        # print the shape and values of src and trg
         optimizer.zero_grad()
-        print("The shape of src is: ", src.shape)
-        print("The shape of trg is: ", trg.shape)
-        print("Now this is the INPUT_DIM: ", INPUT_DIM)
-        output = model(src, trg)
+        output = model(src, trg, teacher_forcing_ratio=args.teacher_forcing_ratio)
         # output = [trg len, batch size, output dim]
         output_dim = output.shape[-1]
         output = output[1:].view(-1, output_dim)
         trg = trg[1:].reshape(-1)
-        print("The shape of output is: ", output.shape)
-        print("The shape of trg is: ", trg.shape)
         loss = criterion(output, trg)
         loss = Variable(loss, requires_grad = True)
-        acc = calculate_accuracy(output, trg)
+        # acc = calculate_accuracy(output, trg)
+        acc = calculate_char_accuracy(output, trg)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), clip)
         optimizer.step()
         epoch_loss += loss.item()
         epoch_acc += acc
+    print("THIS IS TRAINING LOOP END")
+    print("\n\n")
     return epoch_loss / len(iterator), epoch_acc / len(iterator)
 
 # define a function to evaluate the model on a validation set
@@ -119,44 +137,43 @@ def evaluate(model, iterator, criterion):
     model.eval()
     epoch_loss = 0
     epoch_acc = 0
+    print("THIS IS EVALUATION LOOP")
     with torch.no_grad():
-        for i, batch in enumerate(iterator):
+        for i, batch in enumerate(tqdm(iterator)):
             src = batch[0]
             trg = batch[1]
-            src = src.unsqueeze(0)
-            trg = trg.unsqueeze(0)
-            # if a new word is there in val set not in vocab, then assign it to <unk>
-            for i in range(src.shape[1]):
-                if src[0][i] >= INPUT_DIM:
-                    src[0][i] = 0
+            # swap the axes to match the input format
+            src = src.permute(1, 0)
+            trg = trg.permute(1, 0)
             output = model(src, trg, teacher_forcing_ratio=0.0)
             # output = [trg len, batch size, output dim]
             output_dim = output.shape[-1]
             output = output[1:].view(-1, output_dim)
-            trg = trg[1:].view(-1)
+            trg = trg[1:].reshape(-1)
             loss = criterion(output, trg)
-            acc = calculate_accuracy(output, trg)
+            # acc = calculate_accuracy(output, trg)
+            acc = calculate_char_accuracy(output, trg)
             epoch_loss += loss.item()
             epoch_acc += acc
+    print("THIS IS EVALUATION LOOP END")
+    print("\n\n")
     return epoch_loss / len(iterator), epoch_acc / len(iterator)
 
-# Train the model
-N_EPOCHS = 1
-CLIP = 1
+# train the model
 best_valid_loss = float('inf')
 for epoch in range(N_EPOCHS):
     train_loss, train_acc = train(model, train_loader, optimizer, criterion, CLIP)
-    # valid_loss, valid_accuracy = evaluate(model, valid_loader, criterion)
-    # if valid_loss < best_valid_loss:
-    #     best_valid_loss = valid_loss
-    #     torch.save(model.state_dict(), 'tut3-model.pt')
-    # print(f'Epoch: {epoch+1} | Train Loss: {train_loss:.3f} | Val. Loss: {valid_loss:.3f} | Val. Acc: {valid_accuracy*100:.2f}')
+    valid_loss, valid_accuracy = evaluate(model, valid_loader, criterion)
+    if valid_loss < best_valid_loss:
+        best_valid_loss = valid_loss
+        torch.save(model.state_dict(), 'tut3-model.pt')
+    print(f'Epoch: {epoch+1} | Train Loss: {train_loss:.3f} | Train Acc: {train_acc*100:.2f} | Val. Loss: {valid_loss:.3f} | Val. Acc: {valid_accuracy*100:.2f}')
 
     # print train loss and accuracy
-    print(f'Epoch: {epoch+1} | Train Loss: {train_loss:.3f} | Train Acc: {train_acc*100:.2f}')
+    # print(f'Epoch: {epoch+1} | Train Loss: {train_loss:.3f} | Train Acc: {train_acc*100:.2f}')
 
 def print_execution_time():
     end_time = time.time()
-    print("Execution time: ", end_time - start_time)
+    print("Execution time: ", (end_time - start_time) / 60, " minutes")
 
 atexit.register(print_execution_time)
