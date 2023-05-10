@@ -37,6 +37,7 @@ parser.add_argument('--dropout', type=float, default=0.5, help='dropout rate for
 parser.add_argument('--teacher_forcing_ratio', type=float, default=0.5, help='teacher forcing ratio')
 parser.add_argument('--clip', type=float, default=1.0, help='gradient clipping')
 parser.add_argument('--target_language', type=str, default='hin', help='target language')
+parser.add_argument('--cell_type', type=str, default='gru', help='choices: [lstm, gru, rnn]')
 args = parser.parse_args()
 
 # load the data
@@ -67,6 +68,7 @@ DEC_DROPOUT = args.dropout
 BATCH_SIZE = args.batch_size
 N_EPOCHS = args.epochs
 CLIP = args.clip
+CELL_TYPE = args.cell_type
 OUTPUT_SIZE = len(tgt_vocab_train)
 
 train_loader = word_translation_iterator(train_data, src_vocab_train, tgt_vocab_train, src_word_to_idx_train, tgt_word_to_idx_train, batch_size=BATCH_SIZE)
@@ -77,12 +79,12 @@ test_loader = word_translation_iterator(test_data, src_vocab_test, tgt_vocab_tes
 print("Time taken for data loading: ", time.time() - start_time)
 
 # define the model
-# enc = Encoder(INPUT_DIM, ENC_EMB_DIM, HID_DIM, N_LAYERS, ENC_DROPOUT)
-# dec = Decoder(OUTPUT_DIM, DEC_EMB_DIM, HID_DIM, N_LAYERS, DEC_DROPOUT)
+# enc = Encoder(INPUT_DIM, ENC_EMB_DIM, HID_DIM, N_LAYERS, ENC_DROPOUT, CELL_TYPE)
+# dec = Decoder(OUTPUT_DIM, DEC_EMB_DIM, HID_DIM, N_LAYERS, DEC_DROPOUT, CELL_TYPE)
 # model = Seq2Seq(enc, dec, device).to(device)
 
-enc1 = Encoder(INPUT_DIM, ENC_EMB_DIM, HID_DIM, N_LAYERS, ENC_DROPOUT)
-dec1 = Decoder(OUTPUT_DIM, DEC_EMB_DIM, HID_DIM, OUTPUT_SIZE, N_LAYERS, DEC_DROPOUT)
+enc1 = Encoder(INPUT_DIM, ENC_EMB_DIM, HID_DIM, N_LAYERS, ENC_DROPOUT, CELL_TYPE)
+dec1 = Decoder(OUTPUT_DIM, DEC_EMB_DIM, HID_DIM, OUTPUT_SIZE, N_LAYERS, DEC_DROPOUT, CELL_TYPE)
 model = Seq2Seq(enc1, dec1).to(device)
 
 # define the optimizer and loss function

@@ -7,16 +7,23 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 class Encoder(nn.Module):
-    def __init__(self, input_size, embedding_size, hidden_size, num_layers, p):
+    def __init__(self, input_size, embedding_size, hidden_size, num_layers, p, cell_type="LSTM", bidirectional=True):
         super(Encoder, self).__init__()
         self.hidden_size = hidden_size
         self.num_layers = num_layers
+        self.cell_type = cell_type
+        self.bidirectional = bidirectional
 
         self.embedding = nn.Embedding(input_size, embedding_size)
-        self.rnn = nn.LSTM(embedding_size, hidden_size, num_layers, bidirectional=True)
+        if self.cell_type == "LSTM":
+            self.rnn = nn.LSTM(embedding_size, hidden_size, num_layers, bidirectional=self.bidirectional)
+        elif self.cell_type == "GRU":
+            self.rnn = nn.GRU(embedding_size, hidden_size, num_layers, bidirectional=self.bidirectional)
+        else:
+            self.rnn = nn.RNN(embedding_size, hidden_size, num_layers, bidirectional=self.bidirectional)
 
-        self.fc_hidden = nn.Linear(hidden_size * 2, hidden_size)
-        self.fc_cell = nn.Linear(hidden_size * 2, hidden_size)
+        self.fc_hidden = nn.Linear(hidden_size * (1 + self.bidirectional), hidden_size)
+        self.fc_cell = nn.Linear(hidden_size * (1 + self.bidirectional), hidden_size)
         self.dropout = nn.Dropout(p)
 
     def forward(self, x):
@@ -25,29 +32,49 @@ class Encoder(nn.Module):
         embedding = self.dropout(self.embedding(x))
         # embedding shape: (seq_length, N, embedding_size)
 
-        encoder_states, (hidden, cell) = self.rnn(embedding)
-        # outputs shape: (seq_length, N, hidden_size)
+        if self.cell_type == "LSTM":
+            encoder_states, (hidden, cell) = self.rnn(embedding)
+            # outputs shape: (seq_length, N, hidden_size)
+        else:
+            encoder_states, hidden = self.rnn(embedding)
+            cell = None
 
-        # Use forward, backward cells and hidden through a linear layer
-        # so that it can be input to the decoder which is not bidirectional
-        # Also using index slicing ([idx:idx+1]) to keep the dimension
-        hidden = self.fc_hidden(torch.cat((hidden[0:self.num_layers], hidden[self.num_layers:]), dim=2))
-        cell = self.fc_cell(torch.cat((cell[0:self.num_layers], cell[self.num_layers:]), dim=2))
+        if self.bidirectional: 
+            hidden = self.fc_hidden(torch.cat((hidden[0:self.num_layers], hidden[self.num_layers:]), dim=2))
+            if self.cell_type == "LSTM":
+                cell = self.fc_cell(torch.cat((cell[0:self.num_layers], cell[self.num_layers:]), dim=2))
+            else: 
+                cell = None
+        else:
+            hidden = self.fc_hidden(hidden)
+            if self.cell_type == "LSTM":
+                cell = self.fc_cell(cell)
+            else:
+                cell = None
 
         return encoder_states, hidden, cell
     
 
 class Decoder(nn.Module): 
-    def __init__(self, input_size, embedding_size, hidden_size, output_size, num_layers, p):
+    def __init__(self, input_size, embedding_size, hidden_size, output_size, num_layers, p, cell_type="LSTM", bidirectional=True):
         super(Decoder, self).__init__()
         self.hidden_size = hidden_size
         self.num_layers = num_layers
+        self.cell_type = cell_type
+        self.bidirectional = bidirectional
 
         self.embedding = nn.Embedding(input_size, embedding_size)
-        self.rnn = nn.LSTM(hidden_size * 2 + embedding_size, hidden_size, num_layers)
-        # self.rnn = nn.LSTM(hidden_size + embedding_size, hidden_size, num_layers)
+        if self.cell_type == "LSTM":
+            self.rnn = nn.LSTM(hidden_size * (1 + self.bidirectional) + embedding_size, hidden_size, num_layers)
+            # self.rnn = nn.LSTM(hidden_size + embedding_size, hidden_size, num_layers)
+        elif self.cell_type == "GRU":
+            self.rnn = nn.GRU(hidden_size * (1 + self.bidirectional) + embedding_size, hidden_size, num_layers)
+            # self.rnn = nn.GRU(hidden_size + embedding_size, hidden_size, num_layers)
+        else:
+            self.rnn = nn.RNN(hidden_size * (1 + self.bidirectional) + embedding_size, hidden_size, num_layers)
+            # self.rnn = nn.RNN(hidden_size + embedding_size, hidden_size, num_layers)
 
-        self.energy = nn.Linear(hidden_size * 3, 1)
+        self.energy = nn.Linear(hidden_size * (2 + self.bidirectional), 1)
         self.fc = nn.Linear(hidden_size, output_size)
         self.dropout = nn.Dropout(p)
         self.softmax = nn.Softmax(dim=0)
@@ -78,8 +105,12 @@ class Decoder(nn.Module):
         rnn_input = torch.cat((context_vector, embedding), dim=2)
         # rnn_input: (1, N, hidden_size*2 + embedding_size)
 
-        outputs, (hidden, cell) = self.rnn(rnn_input, (hidden, cell))
-        # outputs: (1, N, hidden_size)
+        if self.cell_type == "LSTM":
+            outputs, (hidden, cell) = self.rnn(rnn_input, (hidden, cell))
+            # outputs: (1, N, hidden_size)
+        else:
+            outputs, hidden = self.rnn(rnn_input, hidden)
+            cell = None
 
         predictions = self.fc(outputs).squeeze(0)
         # predictions: (N, hidden_size)
@@ -122,13 +153,13 @@ class Seq2Seq(nn.Module):
             x = target[t] if random.random() < teacher_force_ratio else best_guess
 
         return outputs
-    
+
 if __name__ == '__main__':
     # test the model
     hidden_size = 256
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    encoder = Encoder(input_size=100, embedding_size=10, hidden_size=hidden_size, num_layers=4, p=0.5)
-    decoder = Decoder(input_size=100, embedding_size=10, hidden_size=hidden_size, output_size=100, num_layers=4, p=0.5)
+    encoder = Encoder(input_size=100, embedding_size=10, hidden_size=hidden_size, num_layers=1, p=0.5, cell_type="GRU", bidirectional=False)
+    decoder = Decoder(input_size=100, embedding_size=10, hidden_size=hidden_size, output_size=100, num_layers=1, p=0.5, cell_type="GRU", bidirectional=False)
     model = Seq2Seq(encoder, decoder).to(device)
     x = torch.tensor([[1, 2, 3, 4, 5], [1, 2, 3, 4, 0], [1, 2, 3, 0, 0]]).to(device)
     y = torch.tensor([[1, 2, 3, 4, 5], [1, 2, 3, 4, 0], [1, 2, 3, 0, 0]]).to(device)

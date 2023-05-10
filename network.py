@@ -4,33 +4,53 @@ import torch.optim as optim
 
 class Encoder(nn.Module):
     '''input_dim -> source vocab size'''
-    def __init__(self, input_dim, emb_dim, hid_dim, n_layers, dropout):
+    def __init__(self, input_dim, emb_dim, hid_dim, n_layers, dropout, cell_type='gru'):
         super().__init__()
         self.input_dim = input_dim
+        self.cell_type = cell_type
         self.embedding = nn.Embedding(self.input_dim + 1, emb_dim)
-        self.rnn = nn.GRU(emb_dim, hid_dim, num_layers=n_layers, dropout=dropout)
+        if self.cell_type == 'gru':
+            self.rnn = nn.GRU(emb_dim, hid_dim, num_layers=n_layers, dropout=dropout)
+        elif self.cell_type == 'lstm':
+            self.rnn = nn.LSTM(emb_dim, hid_dim, num_layers=n_layers, dropout=dropout)
+        else:
+            self.rnn = nn.rnn(emb_dim, hid_dim, num_layers=n_layers, dropout=dropout)
 
     def forward(self, src):
         # src = [src len, batch size]
 
         embedded = self.embedding(src)
         # embedded = [src len, batch size, emb dim]
-        outputs, hidden = self.rnn(embedded)
+        if self.cell_type == 'lstm':
+            outputs, (hidden, cell) = self.rnn(embedded)
+            return hidden, cell
+        else:
+            outputs, hidden = self.rnn(embedded)
+            return hidden
+        # outputs, hidden = self.rnn(embedded)
         # outputs = [src len, batch size, hid dim]
         # hidden = [n layers, batch size, hid dim]
-        return hidden
+
+        # return hidden
 
 
 class Decoder(nn.Module):
-    def __init__(self, output_dim, emb_dim, hid_dim, n_layers, dropout):
+    def __init__(self, output_dim, emb_dim, hid_dim, n_layers, dropout, cell_type='gru'):
         super().__init__()
         self.output_dim = output_dim
+        self.cell_type = cell_type
         self.embedding = nn.Embedding(output_dim, emb_dim)
-        self.rnn = nn.GRU(emb_dim, hid_dim, num_layers=n_layers, dropout=dropout)
+        if self.cell_type == 'gru':
+            self.rnn = nn.GRU(emb_dim, hid_dim, num_layers=n_layers, dropout=dropout)
+        elif self.cell_type == 'lstm':
+            self.rnn = nn.LSTM(emb_dim, hid_dim, num_layers=n_layers, dropout=dropout)
+        else:
+            self.rnn = nn.rnn(emb_dim, hid_dim, num_layers=n_layers, dropout=dropout)
+
         self.fc_out = nn.Linear(hid_dim, output_dim)
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, input, hidden):
+    def forward(self, input, hidden, cell=None):
         # input = [batch size]
         # hidden = [n layers, batch size, hid dim]
         input = input.unsqueeze(0)
@@ -38,7 +58,10 @@ class Decoder(nn.Module):
         embedded = self.embedding(input)
         # embedded = [1, batch size, emb dim]
         embedded = self.dropout(embedded)
-        output, hidden = self.rnn(embedded, hidden)
+        if self.cell_type == 'lstm':
+            output, (hidden, cell) = self.rnn(embedded, (hidden, cell))
+        else:
+            output, hidden = self.rnn(embedded, hidden)
         # output = [1, batch size, hid dim]
         # hidden = [n layers, batch size, hid dim]
         prediction = self.fc_out(output.squeeze(0))
@@ -64,33 +87,15 @@ class Seq2Seq(nn.Module):
         hidden = self.encoder(src)
         input = trg[0, :]
         for t in range(1, trg_len):
-            output, hidden = self.decoder(input, hidden)
+            if self.decoder.cell_type == 'lstm':
+                output, hidden, cell = self.decoder(input, hidden, cell)
+            else:
+                output, hidden = self.decoder(input, hidden)
             outputs[t] = output
             teacher_force = torch.rand(1).item() < teacher_forcing_ratio
             top1 = output.argmax(1)
             input = trg[t] if teacher_force else top1
         return outputs
-
-# add a attention layer to the basic seq2seq model
-class Attention(nn.Module):
-    def __init__(self, hid_dim):
-        super().__init__()
-        self.attn = nn.Linear(hid_dim * 2, hid_dim)
-        self.v = nn.Linear(hid_dim, 1, bias=False)
-
-    def forward(self, hidden, encoder_outputs):
-        # hidden = [batch size, hid dim]
-        # encoder_outputs = [src len, batch size, hid dim]
-        src_len = encoder_outputs.shape[0]
-        hidden = hidden.repeat(src_len, 1, 1).transpose(0, 1)
-        # hidden = [batch size, src len, hid dim]
-        encoder_outputs = encoder_outputs.transpose(0, 1)
-        # encoder_outputs = [batch size, src len, hid dim]
-        energy = torch.tanh(self.attn(torch.cat((hidden, encoder_outputs), dim=2)))
-        # energy = [batch size, src len, hid dim]
-        attention = self.v(energy).squeeze(2)
-        # attention = [batch size, src len]
-        return torch.softmax(attention, dim=1)
 
 
 if __name__ == '__main__':
