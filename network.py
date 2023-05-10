@@ -13,23 +13,6 @@ class Encoder(nn.Module):
     def forward(self, src):
         # src = [src len, batch size]
 
-        maximum = 0
-        minimum = 0
-        for i in range(len(src)):
-            for j in range(len(src[i])):
-                if src[i][j] > maximum:
-                    maximum = src[i][j]
-                if src[i][j] < minimum:
-                    minimum = src[i][j]
-
-        if (maximum > self.input_dim): 
-            print("The max value of src is: ", maximum)
-
-        # also print the min value of src
-        # minimum = min(src)
-        if (minimum < 0):
-            print("The min value of src is: ", minimum)
-
         embedded = self.embedding(src)
         # embedded = [src len, batch size, emb dim]
         outputs, hidden = self.rnn(embedded)
@@ -87,6 +70,27 @@ class Seq2Seq(nn.Module):
             top1 = output.argmax(1)
             input = trg[t] if teacher_force else top1
         return outputs
+
+# add a attention layer to the basic seq2seq model
+class Attention(nn.Module):
+    def __init__(self, hid_dim):
+        super().__init__()
+        self.attn = nn.Linear(hid_dim * 2, hid_dim)
+        self.v = nn.Linear(hid_dim, 1, bias=False)
+
+    def forward(self, hidden, encoder_outputs):
+        # hidden = [batch size, hid dim]
+        # encoder_outputs = [src len, batch size, hid dim]
+        src_len = encoder_outputs.shape[0]
+        hidden = hidden.repeat(src_len, 1, 1).transpose(0, 1)
+        # hidden = [batch size, src len, hid dim]
+        encoder_outputs = encoder_outputs.transpose(0, 1)
+        # encoder_outputs = [batch size, src len, hid dim]
+        energy = torch.tanh(self.attn(torch.cat((hidden, encoder_outputs), dim=2)))
+        # energy = [batch size, src len, hid dim]
+        attention = self.v(energy).squeeze(2)
+        # attention = [batch size, src len]
+        return torch.softmax(attention, dim=1)
 
 
 if __name__ == '__main__':

@@ -2,7 +2,9 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import random
-from network import Encoder, Decoder, Seq2Seq
+# from network import Encoder, Decoder, Seq2Seq
+# from network1 import Encoder, Decoder, Seq2Seq
+from attention import Encoder, Decoder, Seq2Seq
 from dataset import CustomDataset, WordTranslationDataset, word_translation_iterator
 from torch.autograd import Variable
 import time
@@ -65,6 +67,7 @@ DEC_DROPOUT = args.dropout
 BATCH_SIZE = args.batch_size
 N_EPOCHS = args.epochs
 CLIP = args.clip
+OUTPUT_SIZE = len(tgt_vocab_train)
 
 train_loader = word_translation_iterator(train_data, src_vocab_train, tgt_vocab_train, src_word_to_idx_train, tgt_word_to_idx_train, batch_size=BATCH_SIZE)
 # valid_loader = word_translation_iterator(valid_data, src_vocab_valid, tgt_vocab_valid, src_word_to_idx_valid, tgt_word_to_idx_valid, batch_size=BATCH_SIZE)
@@ -74,11 +77,16 @@ test_loader = word_translation_iterator(test_data, src_vocab_test, tgt_vocab_tes
 print("Time taken for data loading: ", time.time() - start_time)
 
 # define the model
-enc = Encoder(INPUT_DIM, ENC_EMB_DIM, HID_DIM, N_LAYERS, ENC_DROPOUT)
-dec = Decoder(OUTPUT_DIM, DEC_EMB_DIM, HID_DIM, N_LAYERS, DEC_DROPOUT)
-model = Seq2Seq(enc, dec, device).to(device)
+# enc = Encoder(INPUT_DIM, ENC_EMB_DIM, HID_DIM, N_LAYERS, ENC_DROPOUT)
+# dec = Decoder(OUTPUT_DIM, DEC_EMB_DIM, HID_DIM, N_LAYERS, DEC_DROPOUT)
+# model = Seq2Seq(enc, dec, device).to(device)
+
+enc1 = Encoder(INPUT_DIM, ENC_EMB_DIM, HID_DIM, N_LAYERS, ENC_DROPOUT)
+dec1 = Decoder(OUTPUT_DIM, DEC_EMB_DIM, HID_DIM, OUTPUT_SIZE, N_LAYERS, DEC_DROPOUT)
+model = Seq2Seq(enc1, dec1).to(device)
 
 # define the optimizer and loss function
+# optimizer = optim.Adam(model.parameters())
 optimizer = optim.Adam(model.parameters())
 criterion = nn.CrossEntropyLoss()
 
@@ -114,7 +122,7 @@ def train(model, iterator, optimizer, criterion, clip):
         src = src.permute(1, 0)
         trg = trg.permute(1, 0)
         optimizer.zero_grad()
-        output = model(src, trg, teacher_forcing_ratio=args.teacher_forcing_ratio)
+        output = model(src, trg, args.teacher_forcing_ratio)
         # output = [trg len, batch size, output dim]
         output_dim = output.shape[-1]
         output = output[1:].view(-1, output_dim)
@@ -145,7 +153,7 @@ def evaluate(model, iterator, criterion):
             # swap the axes to match the input format
             src = src.permute(1, 0)
             trg = trg.permute(1, 0)
-            output = model(src, trg, teacher_forcing_ratio=0.0)
+            output = model(src, trg, 0.0)
             # output = [trg len, batch size, output dim]
             output_dim = output.shape[-1]
             output = output[1:].view(-1, output_dim)
