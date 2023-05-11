@@ -1,6 +1,7 @@
 import torch 
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.autograd import Variable
 import random 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -56,14 +57,14 @@ class Encoder(nn.Module):
     
 
 class Decoder(nn.Module): 
-    def __init__(self, input_size, embedding_size, hidden_size, output_size, num_layers, p, cell_type="LSTM", bidirectional=True):
+    def __init__(self, embedding_size, hidden_size, output_size, num_layers, p, cell_type="LSTM", bidirectional=True):
         super(Decoder, self).__init__()
         self.hidden_size = hidden_size
         self.num_layers = num_layers
         self.cell_type = cell_type
         self.bidirectional = bidirectional
 
-        self.embedding = nn.Embedding(input_size, embedding_size)
+        self.embedding = nn.Embedding(output_size, embedding_size)
         if self.cell_type == "LSTM":
             self.rnn = nn.LSTM(hidden_size * (1 + self.bidirectional) + embedding_size, hidden_size, num_layers)
             # self.rnn = nn.LSTM(hidden_size + embedding_size, hidden_size, num_layers)
@@ -80,7 +81,7 @@ class Decoder(nn.Module):
         self.softmax = nn.Softmax(dim=0)
         self.relu = nn.ReLU()
 
-    def forward(self, x, encoder_states, hidden, cell):
+    def forward(self, x, encoder_states, hidden, cell=None):
         x = x.unsqueeze(0)
         # x: (1, N) where N is the batch size
 
@@ -133,7 +134,7 @@ class Seq2Seq(nn.Module):
         encoder_states, hidden, cell = self.encoder(source)
 
         # First input will be <SOS> token
-        x = target[0]
+        x = target[1]
 
         for t in range(1, target_len):
             # At every time step use encoder_states and update hidden, cell
@@ -153,6 +154,39 @@ class Seq2Seq(nn.Module):
             x = target[t] if random.random() < teacher_force_ratio else best_guess
 
         return outputs
+    
+    def decode(self, src, trg, method='beam-search'):
+        encoder_output, hidden, cell = self.encoder(src)
+        # print("encoder_output shape in decode: ", encoder_output.shape)
+        hidden = hidden[:self.decoder.num_layers]
+        if method == 'beam-search':
+            return self.beam_decode(trg, hidden, encoder_output)
+        else:
+            return self.greedy_decode(trg, hidden, encoder_output)
+
+    ############ GREEDY SEARCH ############
+    def greedy_decode(self, trg, decoder_hidden, encoder_outputs, ):
+            '''
+            :param target_tensor: target indexes tensor of shape [B, T] where B is the batch size and T is the maximum length of the output sentence
+            :param decoder_hidden: input tensor of shape [1, B, H] for start of the decoding
+            :param encoder_outputs: if you are using attention mechanism you can pass encoder outputs, [T, B, H] where T is the maximum length of input sentence
+            :return: decoded_batch
+            '''
+            seq_len, batch_size = trg.size()
+            decoded_batch = torch.zeros((batch_size, seq_len))
+            # decoder_input = torch.LongTensor([[EN.vocab.stoi['<sos>']] for _ in range(batch_size)]).cuda()
+            decoder_input = Variable(trg.data[0, :]).to(device)  # sos
+            for t in range(seq_len):
+                decoder_output, decoder_hidden, _ = self.decoder(decoder_input, encoder_outputs, decoder_hidden)
+
+                topv, topi = decoder_output.data.topk(1)  # [32, 10004] get candidates
+                topi = topi.view(-1)
+                decoded_batch[:, t] = topi
+
+                decoder_input = topi.detach().view(-1)
+
+            return decoded_batch
+    
 
 if __name__ == '__main__':
     # test the model
