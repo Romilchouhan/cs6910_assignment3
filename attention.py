@@ -187,6 +187,74 @@ class Seq2Seq(nn.Module):
 
             return decoded_batch
     
+    ############ BEAM SEARCH ############
+    def beam_search_decode(self, src, beam_width):
+        self.eval()
+
+        max_len = src.shape[0]  # Maximum sentence length
+        batch_size = src.shape[1]  # Batch size
+        # Encode the source sequence
+        encoder_output, hidden, cell = self.encoder(src)
+
+        # Initialize the beam search
+        beam_outputs = [[torch.tensor([1])]]  # List of completed output sequences
+        beam_scores = torch.zeros(1, dtype=torch.float)  # Scores for each output sequence
+        # hidden = (hidden[0].repeat(1, beam_width, 1), hidden[1].repeat(1, beam_width, 1))  # Repeat hidden state for beam width
+        # print("hidden shape: ", hidden.shape)
+
+        for _ in range(max_len):
+            current_candidates = []  # List to store new candidate sequences
+
+            # Generate candidates for each current beam
+            for output in beam_outputs:
+                # Prepare input for the decoder
+                # trg = torch.tensor(output).unsqueeze(0)  # Add a batch dimension
+                trg = torch.ones(batch_size, dtype=torch.long).to(device)  # Fill with <SOS> tokens
+                # trg = trg.transpose(0, 1)  # Transpose to shape (seq_len, batch_size)
+                # print("baam scores shape: ", beam_scores.shape) 
+                # print("trg shape: ", trg.shape)
+                # print("hidden shape: ", hidden.shape)
+                # print("cell shape: ", cell.shape)
+
+                # Perform a forward pass through the decoder
+                decoder_output, hidden, _ = self.decoder(trg, hidden, cell)
+
+                # Get the log probabilities for the next token
+                log_probs = F.log_softmax(decoder_output.squeeze(0), dim=1)
+
+                # Get the top-k candidates and their log probabilities
+                topk_probs, topk_ids = log_probs.topk(beam_width, dim=1)
+
+                # Expand the current beam
+                for i in range(beam_width):
+                    candidate_seq = output + [topk_ids[0][i].item()]  # Extend the sequence
+                    candidate_score = beam_scores + topk_probs[0][i].item()  # Accumulate the score
+                    
+                    if topk_ids[0][i].item() == self.eos_token_id:  # Check if the candidate is complete
+                        beam_outputs.append(candidate_seq)
+                        beam_scores = torch.cat((beam_scores, candidate_score.unsqueeze(0)), dim=0)
+                    else:
+                        # print('candidate_seq: ', candidate_seq)
+                        # print('candidate_score: ', candidate_score)
+                        for c in candidate_score:
+                            current_candidates.append((candidate_seq, c.item()))
+                        # current_candidates.append((candidate_seq, candidate_score.item()))
+
+            # Sort the candidates based on scores
+            # print("I reached here")
+            current_candidates.sort(key=lambda x: x[1], reverse=True)
+            # current_candidates = sorted(current_candidates, key=lambda x: x[1], reverse=True)
+
+            # Select top-k candidates for the next iteration
+            beam_outputs = [candidate[0] for candidate in current_candidates[:beam_width]]
+            beam_scores = torch.tensor([candidate[1] for candidate in current_candidates[:beam_width]])
+
+            if all(output[-1] == self.eos_token_id for output in beam_outputs):
+                break
+
+        best_output = beam_outputs[beam_scores.argmax().item()]
+        return best_output
+    
 
 if __name__ == '__main__':
     # test the model
