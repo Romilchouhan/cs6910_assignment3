@@ -4,8 +4,8 @@ import torch.optim as optim
 import torch.nn.functional as F
 import random
 # from network import Encoder, Decoder, Seq2Seq
-from network1 import Encoder, Decoder, Seq2Seq
-# from attention import Encoder, Decoder, Seq2Seq
+# from network1 import Encoder, Decoder, Seq2Seq
+from attention import Encoder, Decoder, Seq2Seq
 from dataset import CustomDataset, WordTranslationDataset, word_translation_iterator
 from torch.autograd import Variable
 import time
@@ -38,7 +38,9 @@ parser.add_argument('--dropout', type=float, default=0.5, help='dropout rate for
 parser.add_argument('--teacher_forcing_ratio', type=float, default=0.5, help='teacher forcing ratio')
 parser.add_argument('--clip', type=float, default=1.0, help='gradient clipping')
 parser.add_argument('--target_language', type=str, default='hin', help='target language')
-parser.add_argument('--cell_type', type=str, default='gru', help='choices: [lstm, gru, rnn]')
+parser.add_argument('--cell_type', type=str, default='gru', help='choices: [LSTM, GRU, RNN] all should be in caps')
+parser.add_argument('--bidirectional', type=str, default='False', help='choices: [True, False]')
+parser.add_argument('--beam_size', type=int, default=5, help='beam size for beam search')
 args = parser.parse_args()
 
 # load the data
@@ -70,7 +72,14 @@ BATCH_SIZE = args.batch_size
 N_EPOCHS = args.epochs
 CLIP = args.clip
 CELL_TYPE = args.cell_type
+BIDIRECTIONAL = args.bidirectional
 OUTPUT_SIZE = len(tgt_vocab_train)
+
+# convert bidirectional from str to bool
+if BIDIRECTIONAL == 'True':
+    BIDIRECTIONAL = True
+else:
+    BIDIRECTIONAL = False
 
 print("This is the cell type: ", CELL_TYPE)
 
@@ -86,14 +95,12 @@ print("Time taken for data loading: ", time.time() - start_time)
 # dec = Decoder(OUTPUT_DIM, DEC_EMB_DIM, HID_DIM, N_LAYERS, DEC_DROPOUT, CELL_TYPE)
 # model = Seq2Seq(enc, dec, device).to(device)
 
-enc1 = Encoder(INPUT_DIM, ENC_EMB_DIM, HID_DIM, N_LAYERS, ENC_DROPOUT, CELL_TYPE)
-dec1 = Decoder(DEC_EMB_DIM, HID_DIM, OUTPUT_SIZE, N_LAYERS, DEC_DROPOUT, CELL_TYPE)
+enc1 = Encoder(INPUT_DIM, ENC_EMB_DIM, HID_DIM, N_LAYERS, ENC_DROPOUT, CELL_TYPE, BIDIRECTIONAL)
+dec1 = Decoder(DEC_EMB_DIM, HID_DIM, OUTPUT_SIZE, N_LAYERS, DEC_DROPOUT, CELL_TYPE, BIDIRECTIONAL)
 model = Seq2Seq(enc1, dec1).to(device)
 
-# define the optimizer and loss function
-# optimizer = optim.Adam(model.parameters())
+# define the optimizer 
 optimizer = optim.Adam(model.parameters())
-criterion = nn.CrossEntropyLoss()
 
 # define a function to calculate the accuracy of the model
 def calculate_accuracy(predicted_output, trg):
@@ -127,157 +134,69 @@ def compute_loss(preds, trg):
     return cross_entropy_loss, predicted_output
 
 
-# define a function to perform one epoch of training
-def train(model, iterator, optimizer, criterion, clip):
+def train(model, iterator, optimizer, clip):
     model.train()
     epoch_loss = 0
     epoch_acc = 0
-    decoded_batch_list = []
     print("THIS IS TRAINING LOOP")
-    # use tqdm to show the progress bar    
+    # use tqdm to show the progress bar
     for i, batch in enumerate(tqdm(iterator)):
         src = batch[0]
         trg = batch[1]
         # swap the axes to match the input format
-        src = src.permute(1, 0)
-        trg = trg.permute(1, 0)
+        src = src.permute(1, 0)  # [src_len, batch_size]
+        trg = trg.permute(1, 0)  # [trg_len, batch_size]
         optimizer.zero_grad()
-        output = model(src, trg, args.teacher_forcing_ratio)
-        output = output.permute(1, 2, 0)
-        # output = [batch_size, target_vocab_size, trg_len]
+
+        #### WITHOUTH BEAM SEARCH ####
+        output = model(src, trg, args.teacher_forcing_ratio) 
+        output = output.permute(1, 2, 0)  # [batch_size, target_vocab_size, trg_len]
         loss, preds = compute_loss(output, trg)
-        decoded_batch = model.decode(src, trg, method='grid-search')
-        print("decoded_batch.shape: ", decoded_batch.shape)
-        # loss, preds = compute_loss(decoded_batch.T, trg)
-        print("preds.shape: ", preds.shape)
-        # loss = criterion(decoded_batch, trg)
-        # loss = F.cross_entropy(decoded_batch.T.float(), trg.float())
-        # print("output.shape: ", output.shape)
-        # print("trg.shape: ", trg.shape)
-        # print("decoded_batch.shape: ", decoded_batch.shape)
-        decoded_batch_list.append(decoded_batch)
-        loss = Variable(loss, requires_grad = True)
+        accuracy = calculate_accuracy(preds, trg)
+        loss = Variable(loss, requires_grad=True)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), clip)
         optimizer.step()
         epoch_loss += loss.item()
-        # apply beam search
-        print("src.shape: ", src.shape)
-        sequences = []
-        decoded_sequence = model.batch_beam_search_decode(src, beam_width=3)
-        print("decoded_sequence.shape: ", decoded_sequence.shape)
-        sequences.append(decoded_sequence)
-        # sequences = torch.tensor(sequences)
-        # print("sequences.shape: ", sequences.shape)
-        print("sequences: ", sequences)
+        epoch_acc += accuracy
 
-
-        acc = calculate_accuracy(preds, trg)
-        epoch_acc += acc
-    # print("print sample from first decode batch")
-    # print("Shape of decoded_batch_list[0]: ", decoded_batch_list[0].shape)
-    # for word_index in decoded_batch_list[0]:
-    #     print("word_index: ", word_index)
-    #     decode_text = []
-    #     for i in word_index:
-    #         idx = int(i.item())
-    #         decode_text.append(tgt_idx_to_word_train[idx])
-    #     # decode_text = [tgt_idx_to_word_valid[i] for i in int(word_index.item())]
-    #     decode_word = ' '.join(decode_text)
-    #     print("pred word: ", decode_word)
     print("THIS IS TRAINING LOOP END")
     print("\n\n")
     return epoch_loss / len(iterator), epoch_acc / len(iterator)
 
-# define a function to evaluate the model on a validation set
-def evaluate_beam_search(model, data_loader, beam_width, device):
+
+def evaluate(model, iterator):
     model.eval()
-    total_sequences = 0
-    correct_sequences = 0
-    # make output_tensor of shape [batch_size, max_len]
-    output_tensor = torch.zeros((len(data_loader), data_loader.dataset.max_len))
+    epoch_acc = 0
     print("THIS IS EVALUATION LOOP")
     with torch.no_grad():
-        for i, batch in enumerate(tqdm(data_loader)):
-            batch_inputs = batch[0]
-            batch_targets = batch[1]
-            batch_inputs = batch_inputs.to(device)
-
-            print("batch_inputs.shape: ", batch_inputs.shape)
-            # Generate sequences using beam search
-            sequences = []
-            # for src in batch_inputs:
-            decoded_sequence = model.beam_search_decode(batch_inputs, beam_width)
-            print("decoded_sequence.shape: ", decoded_sequence.shape)
-            sequences.append(decoded_sequence)
-            sequences = torch.tensor(sequences[1:])
-
-            output_tensor[i] = sequences
-
-
-            batch_targets = batch_targets.tolist()
-            for target, sequence in zip(batch_targets, sequences):
-                total_sequences += 1
-                if sequence == target:
-                    correct_sequences += 1
+        for i, batch in enumerate(tqdm(iterator)):
+            src = batch[0]
+            trg = batch[1]
+            # swap the axes to match the input format
+            src = src.permute(1, 0)
+            trg = trg.permute(1, 0)
+            output = model(src, trg, 0.0)
+            output = output.permute(1, 2, 0)  # output = [batch_size, target_vocab_size, trg_len]
+            loss, preds = compute_loss(output, trg)
+            # use beam search to decode
+            # best_indices, _ = model.beam_search_decoder(output)
+            best_indices, _ = model.greedy_search_decoder(output)
+            predicted = best_indices.to(torch.float)
+            trg = trg.to(torch.float)
+            acc = calculate_accuracy(predicted, trg)            
+            epoch_acc += acc
     print("THIS IS EVALUATION LOOP END")
-    accuracy = correct_sequences / total_sequences
-    return accuracy
-
-# def evaluate(model, iterator, criterion):
-#     model.eval()
-#     epoch_loss = 0
-#     epoch_acc = 0
-#     decoded_batch_list = []
-#     print("THIS IS EVALUATION LOOP")
-#     with torch.no_grad():
-#         for i, batch in enumerate(tqdm(iterator)):
-#             src = batch[0]
-#             trg = batch[1]
-#             # swap the axes to match the input format
-#             src = src.permute(1, 0)
-#             trg = trg.permute(1, 0)
-#             output = model(src, trg, 0.0)
-#             output = output.permute(1, 2, 0)
-#             # output = [batch_size, target_vocab_size, trg_len]
-#             loss, preds = compute_loss(output, trg)
-#             # use beam search to decode
-#             decoded_batch = model.decode(src, trg, method='grid-search')
-#             print("decoded_batch: ", decoded_batch.shape)
-#             decoded_batch_list.append(decoded_batch)
-#             # evaluate on beam search best result
-            
-#             acc = calculate_accuracy(preds, trg)
-#             epoch_loss += loss.item()
-#             epoch_acc += acc
-#         # print("print sample from first decode batch")
-#         # print("Shape of decoded_batch_list[0]: ", decoded_batch_list[0].shape)
-#         # for word_index in decoded_batch_list[0]:
-#         #     print("word_index: ", word_index)
-#         #     decode_text = []
-#         #     for i in word_index:
-#         #         idx = int(i.item())
-#         #         decode_text.append(tgt_idx_to_word_train[idx])
-#         #     # decode_text = [tgt_idx_to_word_valid[i] for i in int(word_index.item())]
-#         #     decode_word = ' '.join(decode_text)
-#         #     print("pred word: ", decode_word)
-
-#     print("THIS IS EVALUATION LOOP END")
-#     print("\n\n")
-#     return epoch_loss / len(iterator), epoch_acc / len(iterator)
+    print("\n\n")
+    return epoch_acc / len(iterator)
 
 # train the model
 best_valid_loss = float('inf')
 for epoch in range(N_EPOCHS):
-    train_loss, train_acc = train(model, train_loader, optimizer, criterion, CLIP)
-    valid_accuracy = evaluate_beam_search(model, valid_loader, beam_width=5, device=device)
-    # if valid_loss < best_valid_loss:
-    #     best_valid_loss = valid_loss
-    #     torch.save(model.state_dict(), 'tut3-model.pt')
+    train_loss, train_acc = train(model, train_loader, optimizer, CLIP)
+    valid_accuracy = evaluate(model, valid_loader)
     print(f'Epoch: {epoch+1} | Train Loss: {train_loss:.3f} | Train Acc: {train_acc*100:.2f} | Val. Acc: {valid_accuracy*100:.2f}')
 
-    # print train loss and accuracy
-    # print(f'Epoch: {epoch+1} | Train Loss: {train_loss:.3f} | Train Acc: {train_acc*100:.2f}')
 
 def print_execution_time():
     end_time = time.time()

@@ -96,7 +96,7 @@ class WordTranslationDataset(Dataset):
         tgt_tensor += self.text_to_tensor(tgt_word, self.tgt_word_to_index)
         tgt_tensor.append(self.tgt_word_to_index['<EOS>'])
 
-        return torch.tensor(src_tensor, dtype=torch.long), torch.tensor(tgt_tensor, dtype=torch.long)
+        return torch.tensor(src_tensor), torch.tensor(tgt_tensor)
     
     def text_to_tensor(self, data, word_to_index):
         totensor = []  # list of letters to be converted to tensor

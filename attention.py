@@ -8,7 +8,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 class Encoder(nn.Module):
-    def __init__(self, input_size, embedding_size, hidden_size, num_layers, p, cell_type="LSTM", bidirectional=True):
+    def __init__(self, input_size, embedding_size, hidden_size, num_layers, p, cell_type, bidirectional=True):
         super(Encoder, self).__init__()
         self.hidden_size = hidden_size
         self.num_layers = num_layers
@@ -165,95 +165,96 @@ class Seq2Seq(nn.Module):
             return self.greedy_decode(trg, hidden, encoder_output)
 
     ############ GREEDY SEARCH ############
-    def greedy_decode(self, trg, decoder_hidden, encoder_outputs, ):
-            '''
-            :param target_tensor: target indexes tensor of shape [B, T] where B is the batch size and T is the maximum length of the output sentence
-            :param decoder_hidden: input tensor of shape [1, B, H] for start of the decoding
-            :param encoder_outputs: if you are using attention mechanism you can pass encoder outputs, [T, B, H] where T is the maximum length of input sentence
-            :return: decoded_batch
-            '''
-            seq_len, batch_size = trg.size()
-            decoded_batch = torch.zeros((batch_size, seq_len))
-            # decoder_input = torch.LongTensor([[EN.vocab.stoi['<sos>']] for _ in range(batch_size)]).cuda()
-            decoder_input = Variable(trg.data[0, :]).to(device)  # sos
-            for t in range(seq_len):
-                decoder_output, decoder_hidden, _ = self.decoder(decoder_input, encoder_outputs, decoder_hidden)
+    def greedy_search_decoder(self, post):
+        """Greedy Search Decoder
 
-                topv, topi = decoder_output.data.topk(1)  # [32, 10004] get candidates
-                topi = topi.view(-1)
-                decoded_batch[:, t] = topi
+        Parameters:
 
-                decoder_input = topi.detach().view(-1)
+            post(Tensor) – the posterior of network.
 
-            return decoded_batch
-    
+        Outputs:
+
+            indices(Tensor) – the index sequence.
+            log_prob(Tensor) – the log likelihood of sequence.
+
+        Shape:
+
+            post: (batch_size, seq_length, vocab_size).
+            indices: (batch_size, seq_length).
+            log_prob: (batch_size,).
+
+        Examples:
+
+            >>> post = torch.softmax(torch.randn([32, 20, 1000]), -1)
+            >>> indices, log_prob = greedy_search_decoder(post)
+
+        """
+        post = post.permute(0, 2, 1)  # (batch_size, seq_length, vocab_size)
+        post = torch.softmax(post, dim=-1)
+        batch_size, seq_length, vocab_size = post.shape
+        log_post = post.log()
+        indices = torch.zeros((batch_size, seq_length), dtype=torch.long)
+        log_prob = 0.0
+
+        for i in range(seq_length):
+            output_prob = post[:, i, :]
+            output_token = output_prob.argmax(dim=-1)
+            indices[:, i] = output_token
+            log_prob += log_post[:, i, :].gather(1, output_token.unsqueeze(-1)).squeeze(-1)
+
+        # indices: (batch_size, seq_length)
+        return indices, log_prob
+
+
     ############ BEAM SEARCH ############
-    def beam_search_decode(self, src, beam_width):
-        self.eval()
+    def beam_search_decoder(self, post, k=5):
+        """Beam Search Decoder
 
-        max_len = src.shape[0]  # Maximum sentence length
-        batch_size = src.shape[1]  # Batch size
-        # Encode the source sequence
-        encoder_output, hidden, cell = self.encoder(src)
+        Parameters:
 
-        # Initialize the beam search
-        beam_outputs = [[torch.tensor([1])]]  # List of completed output sequences
-        beam_scores = torch.zeros(1, dtype=torch.float)  # Scores for each output sequence
-        # hidden = (hidden[0].repeat(1, beam_width, 1), hidden[1].repeat(1, beam_width, 1))  # Repeat hidden state for beam width
-        # print("hidden shape: ", hidden.shape)
+            post(Tensor) – the posterior of network.
+            k(int) – beam size of decoder.
 
-        for _ in range(max_len):
-            current_candidates = []  # List to store new candidate sequences
+        Outputs:
 
-            # Generate candidates for each current beam
-            for output in beam_outputs:
-                # Prepare input for the decoder
-                # trg = torch.tensor(output).unsqueeze(0)  # Add a batch dimension
-                trg = torch.ones(batch_size, dtype=torch.long).to(device)  # Fill with <SOS> tokens
-                # trg = trg.transpose(0, 1)  # Transpose to shape (seq_len, batch_size)
-                # print("baam scores shape: ", beam_scores.shape) 
-                # print("trg shape: ", trg.shape)
-                # print("hidden shape: ", hidden.shape)
-                # print("cell shape: ", cell.shape)
+            indices(Tensor) – a beam of index sequence.
+            log_prob(Tensor) – a beam of log likelihood of sequence.
 
-                # Perform a forward pass through the decoder
-                decoder_output, hidden, _ = self.decoder(trg, hidden, cell)
+        Shape:
 
-                # Get the log probabilities for the next token
-                log_probs = F.log_softmax(decoder_output.squeeze(0), dim=1)
+            post: (batch_size, seq_length, vocab_size).
+            indices: (batch_size, beam_size, seq_length).
+            log_prob: (batch_size, beam_size).
 
-                # Get the top-k candidates and their log probabilities
-                topk_probs, topk_ids = log_probs.topk(beam_width, dim=1)
+        Examples:
 
-                # Expand the current beam
-                for i in range(beam_width):
-                    candidate_seq = output + [topk_ids[0][i].item()]  # Extend the sequence
-                    candidate_score = beam_scores + topk_probs[0][i].item()  # Accumulate the score
-                    
-                    if topk_ids[0][i].item() == self.eos_token_id:  # Check if the candidate is complete
-                        beam_outputs.append(candidate_seq)
-                        beam_scores = torch.cat((beam_scores, candidate_score.unsqueeze(0)), dim=0)
-                    else:
-                        # print('candidate_seq: ', candidate_seq)
-                        # print('candidate_score: ', candidate_score)
-                        for c in candidate_score:
-                            current_candidates.append((candidate_seq, c.item()))
-                        # current_candidates.append((candidate_seq, candidate_score.item()))
+            >>> post = torch.softmax(torch.randn([32, 20, 1000]), -1)
+            >>> indices, log_prob = beam_search_decoder(post, 3)
 
-            # Sort the candidates based on scores
-            # print("I reached here")
-            current_candidates.sort(key=lambda x: x[1], reverse=True)
-            # current_candidates = sorted(current_candidates, key=lambda x: x[1], reverse=True)
+        """
+        post = post.permute(0, 2, 1)  # (batch_size, seq_length, vocab_size)
+        post = torch.softmax(post, dim=-1)
+        batch_size, seq_length, vocab_size = post.shape
+        log_post = post.log()
+        log_prob, indices = log_post[:, 0, :].topk(k, sorted=True)
+        indices = indices.unsqueeze(-1)
+        for i in range(1, seq_length):
+            log_prob = log_prob.unsqueeze(-1) + log_post[:, i, :].unsqueeze(1).repeat(1, k, 1)
+            log_prob, index = log_prob.view(batch_size, -1).topk(k, sorted=True)
+            indices = torch.cat([indices, index.unsqueeze(-1)], dim=-1)
+        
+        # Reshape indices to have shape (batch_size, k, seq_length)
+        indices = indices.view(batch_size, k, seq_length)
 
-            # Select top-k candidates for the next iteration
-            beam_outputs = [candidate[0] for candidate in current_candidates[:beam_width]]
-            beam_scores = torch.tensor([candidate[1] for candidate in current_candidates[:beam_width]])
+        best_index = torch.argmax(log_prob, dim=1)
+        # select the best sequence based on the best index
+        best_indices = indices[torch.arange(batch_size), best_index, :]
 
-            if all(output[-1] == self.eos_token_id for output in beam_outputs):
-                break
+        sorted_log_prob = log_prob[:, 0]  # Get the log probabilities from the top beam
 
-        best_output = beam_outputs[beam_scores.argmax().item()]
-        return best_output
+        best_log_prob = sorted_log_prob[torch.arange(batch_size)]
+        # best_indices = [batch_size, seq_len]
+        return best_indices, best_log_prob
     
 
 if __name__ == '__main__':
