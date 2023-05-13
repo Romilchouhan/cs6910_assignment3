@@ -109,31 +109,6 @@ class WordTranslationDataset(Dataset):
         # src_tensor = torch.tensor(totensor, dtype=torch.long)
         return totensor
 
-
-
-# class ValidationDataset(Dataset):
-#     def __init__(self, data) -> None:
-#         super().__init__()
-#         self.data = data
-#         # TODO
-
-#     def __len__(self):
-#         return len(self.data)
-    
-#     def __getitem__(self, index) -> None:
-#         row = self.data.iloc[index]
-#         src_word, tgt_word = row['text'], row['label']
-#         src_tensor = [self.src_word_to_index['<SOS>']]
-#         src_tensor += text_to_tensor(src_word, self.src_word_to_index)
-#         src_tensor.append(self.src_word_to_index['<EOS>'])
-
-#         tgt_tensor = [self.tgt_word_to_index['<SOS>']]
-#         tgt_tensor += text_to_tensor(tgt_word, self.tgt_word_to_index)
-#         tgt_tensor.append(self.tgt_word_to_index['<EOS>'])
-
-#         return torch.tensor(src_tensor, dtype=torch.long), torch.tensor(tgt_tensor, dtype=torch.long)
-
-
 ################# Collate fn ############################
 class MyCollate: 
     '''
@@ -156,7 +131,7 @@ class MyCollate:
 
 def word_translation_iterator(data, src_vocab, tgt_vocab, src_word_to_idx, tgt_word_to_idx, batch_size=32, shuffle=True):
     dataset = WordTranslationDataset(data, src_vocab, tgt_vocab, src_word_to_idx, tgt_word_to_idx)
-    loader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, collate_fn=MyCollate(src_word_to_idx['<PAD>']))
+    loader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, collate_fn=MyCollate(src_word_to_idx['<PAD>']), pin_memory=True)
     return loader
 
 

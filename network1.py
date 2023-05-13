@@ -126,7 +126,7 @@ class Seq2Seq(nn.Module):
         target_len = target.shape[0]
         target_vocab_size = self.decoder.fc.out_features
 
-        outputs = torch.zeros(target_len, batch_size, target_vocab_size).to(device)
+        outputs = torch.zeros(target_len, batch_size, target_vocab_size)
 
         encoder_outputs, hidden, cell = self.encoder(source)
 
