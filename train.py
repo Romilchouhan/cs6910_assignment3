@@ -6,7 +6,7 @@ import torch.nn.functional as F
 import wandb
 import random
 from network1 import Encoder, Decoder, Seq2Seq
-# from attention import Encoder, Decoder, Seq2Seq
+from attention import Encoder as AttentionEncoder, Decoder as AttentionDecoder, Seq2Seq as AttentionSeq2Seq
 from dataset import CustomDataset, WordTranslationDataset, word_translation_iterator
 from torch.autograd import Variable
 import time
@@ -40,6 +40,7 @@ parser.add_argument('--target_language', type=str, default='hin', help='target l
 parser.add_argument('--cell_type', type=str, default='gru', help='choices: [LSTM, GRU, RNN] all should be in caps')
 parser.add_argument('--bidirectional', type=str, default='False', help='choices: [True, False]')
 parser.add_argument('--beam_size', type=int, default=5, help='beam size for beam search')
+parser.add_argument('--attention', type=str, default='False', help='choices: [True, False]')
 parser.add_argument('--wandb', type=str, default='False', help='choices: [True, False]')
 args = parser.parse_args()
 
@@ -90,10 +91,15 @@ test_loader = word_translation_iterator(test_data, src_vocab_train, tgt_vocab_tr
 
 print("Time taken for data loading: ", time.time() - start_time)
 
+if args.attention == 'True':
+    enc1 = AttentionEncoder(INPUT_DIM, ENC_EMB_DIM, HID_DIM, N_LAYERS, ENC_DROPOUT, CELL_TYPE, BIDIRECTIONAL)
+    dec1 = AttentionDecoder(DEC_EMB_DIM, HID_DIM, OUTPUT_SIZE, N_LAYERS, DEC_DROPOUT, CELL_TYPE, BIDIRECTIONAL)
+    model = AttentionSeq2Seq(enc1, dec1).to(device)
 
-enc1 = Encoder(INPUT_DIM, ENC_EMB_DIM, HID_DIM, N_LAYERS, ENC_DROPOUT, CELL_TYPE, BIDIRECTIONAL)
-dec1 = Decoder(DEC_EMB_DIM, HID_DIM, OUTPUT_SIZE, N_LAYERS, DEC_DROPOUT, CELL_TYPE, BIDIRECTIONAL)
-model = Seq2Seq(enc1, dec1).to(device)
+else:
+    enc1 = Encoder(INPUT_DIM, ENC_EMB_DIM, HID_DIM, N_LAYERS, ENC_DROPOUT, CELL_TYPE, BIDIRECTIONAL)
+    dec1 = Decoder(DEC_EMB_DIM, HID_DIM, OUTPUT_SIZE, N_LAYERS, DEC_DROPOUT, CELL_TYPE, BIDIRECTIONAL)
+    model = Seq2Seq(enc1, dec1).to(device)
 
 # define the optimizer 
 optimizer = optim.Adam(model.parameters())
@@ -166,7 +172,8 @@ def evaluate(model, iterator, beam_size=1):
             # use beam search to decode
             best_indices, _ = model.beam_search_decoder(output, beam_size)
             # best_indices, _ = model.greedy_search_decoder(output)
-            word_acc = calculate_accuracy(preds, trg)       
+            word_acc = calculate_accuracy(best_indices, trg)
+            # word_acc = calculate_accuracy(preds, trg)       
             preds = best_indices
             epoch_loss += loss.item()
             epoch_acc += word_acc
@@ -219,7 +226,9 @@ def train_wb(config = sweep_config):
 
     train_loss, train_acc = train_fn(model, train_loader, optimizer, clip=1)
     val_acc = evaluate(model, valid_loader, config.beam_size)
-    wandb.log({"train_loss": train_loss, "train_acc": train_acc, "val_acc": val_acc})
+    wandb.log({"train_loss": train_loss,
+                "train_acc": train_acc*100, 
+                "val_acc": val_acc*100})
 
 
 def print_execution_time():
