@@ -87,9 +87,9 @@ else:
 
 print("This is the cell type: ", CELL_TYPE)
 
-train_loader = word_translation_iterator(train_data, src_vocab_train, tgt_vocab_train, src_word_to_idx_train, tgt_word_to_idx_train, batch_size=BATCH_SIZE).to(device)
-valid_loader = word_translation_iterator(valid_data, src_vocab_train, tgt_vocab_train, src_word_to_idx_train, tgt_word_to_idx_train, batch_size=BATCH_SIZE).to(device)
-test_loader = word_translation_iterator(test_data, src_vocab_train, tgt_vocab_train, src_word_to_idx_train, tgt_word_to_idx_train, batch_size=BATCH_SIZE).to(device)
+train_loader = word_translation_iterator(train_data, src_vocab_train, tgt_vocab_train, src_word_to_idx_train, tgt_word_to_idx_train, batch_size=BATCH_SIZE)
+valid_loader = word_translation_iterator(valid_data, src_vocab_train, tgt_vocab_train, src_word_to_idx_train, tgt_word_to_idx_train, batch_size=BATCH_SIZE)
+test_loader = word_translation_iterator(test_data, src_vocab_train, tgt_vocab_train, src_word_to_idx_train, tgt_word_to_idx_train, batch_size=BATCH_SIZE)
 
 print("Time taken for data loading: ", time.time() - start_time)
 
@@ -127,8 +127,8 @@ def train_fn(model, iterator, optimizer, clip):
     print("THIS IS TRAINING LOOP")
     # use tqdm to show the progress bar
     for i, batch in enumerate(tqdm(iterator)):
-        src = batch[0]
-        trg = batch[1]
+        src = batch[0].to(device)
+        trg = batch[1].to(device)
         # swap the axes to match the input format
         src = src.permute(1, 0)  # [src_len, batch_size]
         trg = trg.permute(1, 0)  # [trg_len, batch_size]
@@ -157,8 +157,8 @@ def evaluate(model, iterator, beam_size=1):
     print("THIS IS EVALUATION LOOP")
     with torch.no_grad():
         for i, batch in enumerate(tqdm(iterator)):
-            src = batch[0]
-            trg = batch[1]
+            src = batch[0].to(device)
+            trg = batch[1].to(device)
             # swap the axes to match the input format
             src = src.permute(1, 0)
             trg = trg.permute(1, 0)
