@@ -126,7 +126,7 @@ class Seq2Seq(nn.Module):
         target_len = target.shape[0]
         target_vocab_size = self.decoder.fc.out_features
 
-        outputs = torch.zeros(target_len, batch_size, target_vocab_size)
+        outputs = torch.zeros(target_len, batch_size, target_vocab_size).to(device)
 
         encoder_outputs, hidden, cell = self.encoder(source)
 
@@ -169,8 +169,7 @@ class Seq2Seq(nn.Module):
             encoder_outputs, decoder_hidden, cell = self.encoder(src)
             seq_len, batch_size = trg.size()
             decoded_batch = torch.zeros((batch_size, seq_len))
-            # decoder_input = torch.LongTensor([[EN.vocab.stoi['<sos>']] for _ in range(batch_size)]).cuda()
-            decoder_input = Variable(trg.data[0, :]).to(device)  # [batch_size]
+            decoder_input = Variable(trg.data[0, :]) # [batch_size]
             for t in range(seq_len):
                 decoder_output, decoder_hidden, _ = self.decoder(decoder_input, decoder_hidden, encoder_outputs)
 
@@ -236,7 +235,6 @@ class Seq2Seq(nn.Module):
 if __name__ == '__main__':
     # test the model
     hidden_size = 256
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     encoder = Encoder(input_size=100, embedding_size=10, hidden_size=hidden_size, num_layers=2, p=0.5, cell_type="RNN")
     decoder = Decoder(input_size=100, embedding_size=10, hidden_size=hidden_size, output_size=100, num_layers=2, p=0.5, cell_type="RNN")
     model = Seq2Seq(encoder, decoder).to(device)

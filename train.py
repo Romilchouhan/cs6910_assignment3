@@ -5,7 +5,6 @@ import torch.optim as optim
 import torch.nn.functional as F
 import wandb
 import random
-# from network import Encoder, Decoder, Seq2Seq
 from network1 import Encoder, Decoder, Seq2Seq
 # from attention import Encoder, Decoder, Seq2Seq
 from dataset import CustomDataset, WordTranslationDataset, word_translation_iterator
@@ -22,8 +21,6 @@ start_time = time.time()
 # set random seeds for reproducibility
 SEED = 1234
 torch.manual_seed(SEED)
-torch.cuda.manual_seed(SEED)
-torch.backends.cudnn.deterministic = True
 
 # define device
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -116,6 +113,8 @@ def compute_loss(preds, trg):
     logits = logits.contiguous().view(-1, trg_vocab_size)  
     target_seq = trg.contiguous().view(-1)
 
+    print("logits shape: ", logits.shape)
+    print("target_seq shape: ", target_seq.shape)
     predicted_output = torch.argmax(logits, dim=1)
     cross_entropy_loss = F.cross_entropy(logits, target_seq, ignore_index=0)
     return cross_entropy_loss, predicted_output
@@ -127,17 +126,17 @@ def train_fn(model, iterator, optimizer, clip):
     print("THIS IS TRAINING LOOP")
     # use tqdm to show the progress bar
     for i, batch in enumerate(tqdm(iterator)):
-        src = batch[0].to(device)
-        trg = batch[1].to(device)
+        src = batch[0].to(device)  # [batch_size, src_len]
+        trg = batch[1].to(device)  # [batch_size, trg_len] 
         # swap the axes to match the input format
-        src = src.permute(1, 0)  # [src_len, batch_size]
-        trg = trg.permute(1, 0)  # [trg_len, batch_size]
+        # src = src.permute(1, 0)  
+        # trg = trg.permute(1, 0)  
         optimizer.zero_grad()
 
         #### WITHOUTH BEAM SEARCH ####
         output = model(src, trg, args.teacher_forcing_ratio) 
         output = output.permute(1, 2, 0)  # [batch_size, target_vocab_size, trg_len]
-        loss, preds = compute_loss(output, trg)
+        loss, preds = compute_loss(output.to(device), trg.to(device))
         accuracy = calculate_accuracy(preds, trg)
         preds = torch.argmax(output, dim=1)  # Get the predicted labels by taking the argmax along the output dimension
         loss = Variable(loss, requires_grad=True)
@@ -153,6 +152,7 @@ def train_fn(model, iterator, optimizer, clip):
 
 def evaluate(model, iterator, beam_size=1):
     model.eval()
+    epoch_loss = 0
     epoch_acc = 0
     print("THIS IS EVALUATION LOOP")
     with torch.no_grad():
@@ -160,20 +160,21 @@ def evaluate(model, iterator, beam_size=1):
             src = batch[0].to(device)
             trg = batch[1].to(device)
             # swap the axes to match the input format
-            src = src.permute(1, 0)
-            trg = trg.permute(1, 0)
+            # src = src.permute(1, 0)
+            # trg = trg.permute(1, 0)
             output = model(src, trg, 0.0)
             output = output.permute(1, 2, 0)  # output = [batch_size, target_vocab_size, trg_len]
-            loss, preds = compute_loss(output, trg)
+            loss, preds = compute_loss(output.to(device), trg.to(device))
             # use beam search to decode
             best_indices, _ = model.beam_search_decoder(output, beam_size)
             # best_indices, _ = model.greedy_search_decoder(output)
             word_acc = calculate_accuracy(preds, trg)       
             preds = best_indices
+            epoch_loss += loss.item()
             epoch_acc += word_acc
     print("THIS IS EVALUATION LOOP END")
     print("\n\n")
-    return epoch_acc / len(iterator)
+    return epoch_loss / len(iterator), epoch_acc / len(iterator)
 
 # wandb sweep config
 sweep_config = {
@@ -239,7 +240,7 @@ if __name__ == '__main__':
     else:    
         for epoch in range(N_EPOCHS):
             train_loss, train_acc = train_fn(model, train_loader, optimizer, CLIP)
-            valid_accuracy = evaluate(model, valid_loader, BEAM_SIZE)
-            print(f'Epoch: {epoch+1} | Train Loss: {train_loss:.3f} | Train Acc: {train_acc*100:.2f} | Val. Acc: {valid_accuracy*100:.2f}')
+            valid_loss, valid_accuracy = evaluate(model, valid_loader, BEAM_SIZE)
+            print(f'Epoch: {epoch+1} | Train Loss: {train_loss:.3f} | Train Acc: {train_acc*100:.2f} | Val. Loss: {valid_loss:.3f} | Val. Acc: {valid_accuracy*100:.2f}')
 
 
