@@ -113,8 +113,6 @@ def compute_loss(preds, trg):
     logits = logits.contiguous().view(-1, trg_vocab_size)  
     target_seq = trg.contiguous().view(-1)
 
-    print("logits shape: ", logits.shape)
-    print("target_seq shape: ", target_seq.shape)
     predicted_output = torch.argmax(logits, dim=1)
     cross_entropy_loss = F.cross_entropy(logits, target_seq, ignore_index=0)
     return cross_entropy_loss, predicted_output
