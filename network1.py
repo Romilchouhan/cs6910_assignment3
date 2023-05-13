@@ -44,6 +44,8 @@ class Encoder(nn.Module):
                 outputs = (outputs[:, :, :self.hidden_size] + outputs[:, :, self.hidden_size:])
                 # sum bidirectional hidden
                 hidden = (hidden[0:self.num_layers] + hidden[self.num_layers:])
+                # sum bidirectional cell
+                cell = (cell[0:self.num_layers] + cell[self.num_layers:])
                 # outputs shape: (seq_length, batch_size, hidden_size)
             else:   
                 outputs, hidden = self.rnn(embedding)
