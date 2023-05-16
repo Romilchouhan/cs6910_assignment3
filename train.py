@@ -239,7 +239,7 @@ if __name__ == '__main__':
     # train the model
     if args.wandb == 'True':
         wandb.login(key="b3a089bfb32755711c3923f3e6ef67c0b0d2409b")
-        sweep_id = wandb.sweep(sweep_config, project="aksharantar")
+        sweep_id = wandb.sweep(sweep_config, project="A3 trial 2")
         wandb.agent(sweep_id, train_wb, count=60)
         
     else:    
