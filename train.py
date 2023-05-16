@@ -212,6 +212,10 @@ def train_wb(config = sweep_config):
                                                                                                             config.dropout,
                                                                                                             config.bidirectional,
                                                                                                             config.beam_size)
+    if config.bidirectional == "True":
+        config.bidirectional = True
+    else:
+        config.bidirectional = False
     enc = AttentionEncoder(INPUT_DIM, config.embedding_size, config.hidden_size, config.num_layers, config.dropout, config.cell_type, config.bidirectional)
     dec = AttentionDecoder(config.embedding_size, config.hidden_size, OUTPUT_DIM, config.num_layers, config.dropout, config.cell_type, config.bidirectional)
     model = AttentionSeq2Seq(enc, dec).to(device)
