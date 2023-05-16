@@ -224,11 +224,14 @@ def train_wb(config = sweep_config):
     else:
         optimizer = optim.SGD(model.parameters(), lr=0.01)
 
-    train_loss, train_acc = train_fn(model, train_loader, optimizer, clip=1)
-    val_acc = evaluate(model, valid_loader, config.beam_size)
-    wandb.log({"train_loss": train_loss,
-                "train_acc": train_acc*100, 
-                "val_acc": val_acc*100})
+    for epoch in range(config.epochs):
+        train_loss, train_acc = train_fn(model, train_loader, optimizer, clip=1)
+        val_loss, val_acc = evaluate(model, valid_loader, config.beam_size)
+        wandb.log({ "epoch": epoch,
+                    "train_loss": train_loss,
+                    "train_acc": train_acc*100, 
+                    "val_loss": val_loss,
+                    "val_acc": val_acc*100})
 
 
 def print_execution_time():
