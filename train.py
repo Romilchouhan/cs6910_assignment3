@@ -159,7 +159,7 @@ def train_fn(model, iterator, optimizer, clip):
     print("\n\n")
     return epoch_loss / len(iterator), epoch_acc / len(iterator)
 
-def evaluate(model, iterator, beam_size=1, clip=1):
+def evaluate(model, iterator, beam_size=1):
     model.eval()
     epoch_loss = 0
     epoch_acc = 0
@@ -171,17 +171,15 @@ def evaluate(model, iterator, beam_size=1, clip=1):
             # swap the axes to match the input format
             # src = src.permute(1, 0)
             # trg = trg.permute(1, 0)
-            output = model(src, trg, 0.0)
+            output = model(src, trg, 0.5) 
             output = output.permute(1, 2, 0)  # output = [batch_size, target_vocab_size, trg_len]
             loss, preds = compute_loss(output.to(device), trg.to(device))
-            # use beam search to decode
-            best_indices, _ = model.beam_search_decoder(output, beam_size)
-            # best_indices, _ = model.greedy_search_decoder(output)
-            # word_acc = calculate_accuracy(best_indices, trg)
             word_acc = calculate_accuracy(preds, trg)       
             # preds = best_indices
             epoch_loss += loss.item()
             epoch_acc += word_acc
+            # use beam search to decode
+            best_indices, _ = model.beam_search_decoder(output, beam_size)
     print("THIS IS EVALUATION LOOP END")
     print("\n\n")
     return epoch_loss / len(iterator), epoch_acc / len(iterator)
