@@ -159,7 +159,7 @@ def train_fn(model, iterator, optimizer, clip):
     print("\n\n")
     return epoch_loss / len(iterator), epoch_acc / len(iterator)
 
-def evaluate(model, iterator, beam_size=1):
+def evaluate(model, iterator, beam_size=1, clip=1):
     model.eval()
     epoch_loss = 0
     epoch_acc = 0
@@ -179,6 +179,7 @@ def evaluate(model, iterator, beam_size=1):
             # best_indices, _ = model.greedy_search_decoder(output)
             # word_acc = calculate_accuracy(best_indices, trg)
             word_acc = calculate_accuracy(preds, trg)       
+            torch.nn.utils.clip_grad_norm_(model.parameters(), clip)
             # preds = best_indices
             epoch_loss += loss.item()
             epoch_acc += word_acc
