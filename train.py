@@ -107,8 +107,13 @@ optimizer = optim.Adam(model.parameters())
 # define a function to calculate the accuracy of the model
 def calculate_accuracy(predicted_output, trg):
     predicted_output = predicted_output.view(trg.shape[0], trg.shape[1])
+    # print("This is the shape of trg: ", trg.shape)
+    # print("This is the shape of predicted_output: ", predicted_output.shape)
     non_pad_elements = (trg != 0).nonzero()  # Find the indices of non-padding elements in the target tensor
-    correct_elements = predicted_output[non_pad_elements[:, 0]].eq(trg[non_pad_elements[:, 0]]).sum().item()
+    # print("This is the shape of non_pad_elements: ", non_pad_elements.shape)
+    # print("This is the shape of non_pad_elements[:, 0]: ", non_pad_elements[:, 0].shape)
+    # correct_elements = predicted_output[non_pad_elements[:, 0]].eq(trg[non_pad_elements[:, 0]]).sum().item()
+    correct_elements = predicted_output[non_pad_elements].eq(trg[non_pad_elements]).sum().item()
     total_elements = trg.numel()
     accuracy = correct_elements / total_elements 
     return accuracy
