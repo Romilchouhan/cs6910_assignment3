@@ -198,7 +198,7 @@ sweep_config = {
         "num_layers": {"values": [1, 2, 3]},
         "hidden_size": {"values": [256, 512, 1024]},
         "cell_type": {"values": ["LSTM", "GRU", "RNN"]},
-        "bidirectional": {"values": [1,0]},
+        "bidirectional": {"values": [True,False]},
         "dropout": {"values": [0.4, 0.5, 0.6]},
         "beam_size": {"values": [3, 4, 5]}
     }
