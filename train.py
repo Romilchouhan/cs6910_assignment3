@@ -36,7 +36,7 @@ parser.add_argument('--num_layers', type=int, default=2, help='number of layers 
 parser.add_argument('--dropout', type=float, default=0.5, help='dropout rate for encoder and decoder')
 parser.add_argument('--teacher_forcing_ratio', type=float, default=0.5, help='teacher forcing ratio')
 parser.add_argument('--clip', type=float, default=1.0, help='gradient clipping')
-parser.add_argument('--target_language', type=str, default='hin', help='target language')
+parser.add_argument('--target_language', type=str, default='tam', help='target language')
 parser.add_argument('--cell_type', type=str, default='gru', help='choices: [LSTM, GRU, RNN] all should be in caps')
 parser.add_argument('--bidirectional', type=str, default='False', help='choices: [True, False]')
 parser.add_argument('--beam_size', type=int, default=5, help='beam size for beam search')
