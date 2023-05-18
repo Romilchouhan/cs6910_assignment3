@@ -14,7 +14,7 @@ path = './aksharantar_sampled'
 # Write a class for custom dataset loading for text data
 class CustomDataset(Dataset):
     """Custom Dataset for loading Indian Language text data."""
-    def __init__(self, path=path, source_lang='en', target_lang='hin', **kwargs):
+    def __init__(self, path=path, source_lang='en', target_lang='tam', **kwargs):
         self.data_dir = path
         self.source_lang = source_lang
         self.target_lang = target_lang

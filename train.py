@@ -192,9 +192,9 @@ sweep_config = {
     "parameters": {
         "batch_size": {"values": [32, 64, 128]},
         "epochs": {"values": [1, 3, 5]},
-        "embedding_size": {"values": [128, 256, 512]},
+        "embedding_size": {"values": [256, 512]},
         "num_layers": {"values": [1, 2, 3]},
-        "hidden_size": {"values": [256, 512, 1024]},
+        "hidden_size": {"values": [256, 512]},
         "cell_type": {"values": ["LSTM", "GRU", "RNN"]},
         "bidirectional": {"values": [True,False]},
         "dropout": {"values": [0.4, 0.5, 0.6]},
@@ -215,9 +215,9 @@ def train_wb(config = sweep_config):
                                                                                                             config.dropout,
                                                                                                             config.bidirectional,
                                                                                                             config.beam_size)
-    enc = AttentionEncoder(INPUT_DIM, config.embedding_size, config.hidden_size, config.num_layers, config.dropout, config.cell_type, config.bidirectional)
-    dec = AttentionDecoder(config.embedding_size, config.hidden_size, OUTPUT_DIM, config.num_layers, config.dropout, config.cell_type, config.bidirectional)
-    model = AttentionSeq2Seq(enc, dec).to(device)
+    enc = Encoder(INPUT_DIM, config.embedding_size, config.hidden_size, config.num_layers, config.dropout, config.cell_type, config.bidirectional)
+    dec = Decoder(config.embedding_size, config.hidden_size, OUTPUT_DIM, config.num_layers, config.dropout, config.cell_type, config.bidirectional)
+    model = Seq2Seq(enc, dec).to(device)
 
     # initialize optimizer
     optimizer = optim.Adam(model.parameters(), lr=0.001)
