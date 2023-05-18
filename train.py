@@ -191,20 +191,20 @@ sweep_config = {
     "metric": {"name": "val_acc", "goal": "maximize"},
     "parameters": {
         "batch_size": {"values": [32, 64, 128]},
-        "epochs": {"values": [1, 3, 5]},
+        "epochs": {"values": [1, 3]},
         "embedding_size": {"values": [256, 512]},
         "num_layers": {"values": [1, 2, 3]},
         "hidden_size": {"values": [256, 512]},
         "cell_type": {"values": ["LSTM", "GRU", "RNN"]},
         "bidirectional": {"values": [True,False]},
         "dropout": {"values": [0.4, 0.5, 0.6]},
-        "beam_size": {"values": [3, 4, 5]}
+        "beam_size": {"values": [3, 4]}
     }
 }
 
 # objective function for wandb sweep
 def train_wb(config = sweep_config):
-    wandb.init(project="A3 trial with tamil", config=config)
+    wandb.init(project="A3 trial tamil with attention", config=config)
     config = wandb.config
     wandb.run.name = "epoch_{}_cell_{}_n-layers_{}_hidden-size_{}_emb-size_{}_batch-size_{}_dropout_{}_bidirectional_{}_beam_{}".format(config.epochs,
                                                                                                             config.cell_type,
@@ -215,9 +215,9 @@ def train_wb(config = sweep_config):
                                                                                                             config.dropout,
                                                                                                             config.bidirectional,
                                                                                                             config.beam_size)
-    enc = Encoder(INPUT_DIM, config.embedding_size, config.hidden_size, config.num_layers, config.dropout, config.cell_type, config.bidirectional)
-    dec = Decoder(config.embedding_size, config.hidden_size, OUTPUT_DIM, config.num_layers, config.dropout, config.cell_type, config.bidirectional)
-    model = Seq2Seq(enc, dec).to(device)
+    enc = AttentionEncoder(INPUT_DIM, config.embedding_size, config.hidden_size, config.num_layers, config.dropout, config.cell_type, config.bidirectional)
+    dec = AttentionDecoder(config.embedding_size, config.hidden_size, OUTPUT_DIM, config.num_layers, config.dropout, config.cell_type, config.bidirectional)
+    model = AttentionSeq2Seq(enc, dec).to(device)
 
     # initialize optimizer
     optimizer = optim.Adam(model.parameters(), lr=0.001)
@@ -242,7 +242,7 @@ if __name__ == '__main__':
     # train the model
     if args.wandb == 'True':
         wandb.login(key="b3a089bfb32755711c3923f3e6ef67c0b0d2409b")
-        sweep_id = wandb.sweep(sweep_config, project="A3 trial with tamil")
+        sweep_id = wandb.sweep(sweep_config, project="A3 trial tamil with attention")
         wandb.agent(sweep_id, train_wb, count=60)
         
     else:    
