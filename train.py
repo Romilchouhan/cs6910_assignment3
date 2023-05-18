@@ -204,7 +204,7 @@ sweep_config = {
 
 # objective function for wandb sweep
 def train_wb(config = sweep_config):
-    wandb.init(project="A3 trial tamil with attention", config=config)
+    wandb.init(project="A3 trial tamil count 120", config=config)
     config = wandb.config
     wandb.run.name = "epoch_{}_cell_{}_n-layers_{}_hidden-size_{}_emb-size_{}_batch-size_{}_dropout_{}_bidirectional_{}_beam_{}".format(config.epochs,
                                                                                                             config.cell_type,
@@ -215,9 +215,9 @@ def train_wb(config = sweep_config):
                                                                                                             config.dropout,
                                                                                                             config.bidirectional,
                                                                                                             config.beam_size)
-    enc = AttentionEncoder(INPUT_DIM, config.embedding_size, config.hidden_size, config.num_layers, config.dropout, config.cell_type, config.bidirectional)
-    dec = AttentionDecoder(config.embedding_size, config.hidden_size, OUTPUT_DIM, config.num_layers, config.dropout, config.cell_type, config.bidirectional)
-    model = AttentionSeq2Seq(enc, dec).to(device)
+    enc = Encoder(INPUT_DIM, config.embedding_size, config.hidden_size, config.num_layers, config.dropout, config.cell_type, config.bidirectional)
+    dec = Decoder(config.embedding_size, config.hidden_size, OUTPUT_DIM, config.num_layers, config.dropout, config.cell_type, config.bidirectional)
+    model = Seq2Seq(enc, dec).to(device)
 
     # initialize optimizer
     optimizer = optim.Adam(model.parameters(), lr=0.001)
@@ -242,8 +242,8 @@ if __name__ == '__main__':
     # train the model
     if args.wandb == 'True':
         wandb.login(key="b3a089bfb32755711c3923f3e6ef67c0b0d2409b")
-        sweep_id = wandb.sweep(sweep_config, project="A3 trial tamil with attention")
-        wandb.agent(sweep_id, train_wb, count=100)
+        sweep_id = wandb.sweep(sweep_config, project="A3 trial tamil count 120")
+        wandb.agent(sweep_id, train_wb, count=120)
         
     else:    
         for epoch in range(N_EPOCHS):
