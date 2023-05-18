@@ -243,7 +243,7 @@ if __name__ == '__main__':
     if args.wandb == 'True':
         wandb.login(key="b3a089bfb32755711c3923f3e6ef67c0b0d2409b")
         sweep_id = wandb.sweep(sweep_config, project="A3 trial tamil count 120")
-        wandb.agent(sweep_id, train_wb, count=120)
+        wandb.agent(sweep_id, train_wb, count=50)
         
     else:    
         for epoch in range(N_EPOCHS):
