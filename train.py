@@ -204,7 +204,7 @@ sweep_config = {
 
 # objective function for wandb sweep
 def train_wb(config = sweep_config):
-    wandb.init(project="A3 trial with attention", config=config)
+    wandb.init(project="A3 trial with tamil", config=config)
     config = wandb.config
     wandb.run.name = "epoch_{}_cell_{}_n-layers_{}_hidden-size_{}_emb-size_{}_batch-size_{}_dropout_{}_bidirectional_{}_beam_{}".format(config.epochs,
                                                                                                             config.cell_type,
@@ -242,7 +242,7 @@ if __name__ == '__main__':
     # train the model
     if args.wandb == 'True':
         wandb.login(key="b3a089bfb32755711c3923f3e6ef67c0b0d2409b")
-        sweep_id = wandb.sweep(sweep_config, project="A3 trial with attention")
+        sweep_id = wandb.sweep(sweep_config, project="A3 trial with tamil")
         wandb.agent(sweep_id, train_wb, count=60)
         
     else:    
