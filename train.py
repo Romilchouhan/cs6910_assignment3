@@ -15,6 +15,7 @@ from tqdm import tqdm
 import warnings
 import argparse 
 warnings.filterwarnings("ignore")
+torch.cuda.empty_cache()
 
 start_time = time.time()
 
