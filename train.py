@@ -190,7 +190,7 @@ sweep_config = {
     "method": "bayes",
     "metric": {"name": "val_acc", "goal": "maximize"},
     "parameters": {
-        "batch_size": {"values": [32, 64, 128]},
+        "batch_size": {"values": [32, 64]},
         "epochs": {"values": [1, 3]},
         "embedding_size": {"values": [256, 512]},
         "num_layers": {"values": [1, 2]},
