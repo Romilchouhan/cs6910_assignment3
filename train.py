@@ -211,8 +211,8 @@ sweep_config = {
     "metric": {"name": "val_acc", "goal": "maximize"},
     "parameters": {
         "batch_size": {"values": [32, 64, 128]},
-        "epochs": {"values": [1, 3]},
-        "embedding_size": {"values": [256, 512]},
+        "epochs": {"values": [5, 10, 15]},
+        "embedding_size": {"values": [64, 128, 256]},
         "num_layers": {"values": [1, 2]},
         "hidden_size": {"values": [256, 512]},
         "cell_type": {"values": ["LSTM", "GRU", "RNN"]},
