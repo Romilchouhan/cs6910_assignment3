@@ -529,17 +529,17 @@ if __name__ == '__main__':
         best_attn_enc = AttentionEncoder(INPUT_DIM, 512, 512, 2, 0.6, 'LSTM', False)
         best_attn_dec = AttentionDecoder(512, 512, OUTPUT_DIM, 2, 0.6, 'LSTM', False)
         best_attn_model = AttentionSeq2Seq(best_attn_enc, best_attn_dec).to(device)
-        # for epoch in range(epochs):
-        #     output, test_loss, test_acc = test_fn(best_model, test_loader, BEAM_SIZE)
-        #     print(f'Epoch: {epoch+1} | Test Loss: {test_loss:.3f} | Test Acc: {test_acc*100:.2f}')
-        # predict_randomly(best_enc, best_dec, './aksharantar_sampled/tam/tam_test.csv', n=5)
+        for epoch in range(epochs):
+            output, test_loss, test_acc = test_fn(best_model, test_loader, BEAM_SIZE)
+            print(f'Epoch: {epoch+1} | Test Loss: {test_loss:.3f} | Test Acc: {test_acc*100:.2f}')
+        predict_randomly(best_enc, best_dec, './aksharantar_sampled/tam/tam_test.csv', n=5)
+        # predict_randomly_beam_search(best_enc, best_dec, './aksharantar_sampled/tam/tam_test.csv', beam_size=x3)
 
         print("Attention model")
         for epoch in range(epochs):
             output, test_loss, test_acc = test_fn(best_attn_model, test_loader, BEAM_SIZE)
             print(f'Epoch: {epoch+1} | Test Loss: {test_loss:.3f} | Test Acc: {test_acc*100:.2f}')
-        # predict_randomly(best_attn_enc, best_attn_dec, './aksharantar_sampled/tam/tam_test.csv', n=5)
-        # predict_randomly_beam_search(best_enc, best_dec, './aksharantar_sampled/tam/tam_test.csv', beam_size=3)
+            
         # for i in range(1, 6):
         #     visualize_model_outputs(best_enc, best_dec, './aksharantar_sampled/tam/tam_test.csv', n=10)
 
