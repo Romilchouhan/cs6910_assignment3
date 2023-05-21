@@ -212,8 +212,8 @@ sweep_config = {
     "metric": {"name": "val_acc", "goal": "maximize"},
     "parameters": {
         "batch_size": {"values": [32, 64, 128]},
-        "epochs": {"values": [5, 10, 15]},
-        "embedding_size": {"values": [64, 128, 256]},
+        "epochs": {"values": [1, 3]},
+        "embedding_size": {"values": [256, 512]},
         "num_layers": {"values": [1, 2]},
         "hidden_size": {"values": [256, 512]},
         "cell_type": {"values": ["LSTM", "GRU", "RNN"]},
@@ -222,6 +222,7 @@ sweep_config = {
         "beam_size": {"values": [3, 4]}
     }
 }
+
 
 # objective function for wandb sweep
 def train_wb(config = sweep_config):
@@ -528,10 +529,10 @@ if __name__ == '__main__':
         best_attn_enc = AttentionEncoder(INPUT_DIM, 512, 512, 2, 0.6, 'LSTM', False)
         best_attn_dec = AttentionDecoder(512, 512, OUTPUT_DIM, 2, 0.6, 'LSTM', False)
         best_attn_model = AttentionSeq2Seq(best_attn_enc, best_attn_dec).to(device)
-        for epoch in range(epochs):
-            output, test_loss, test_acc = test_fn(best_model, test_loader, BEAM_SIZE)
-            print(f'Epoch: {epoch+1} | Test Loss: {test_loss:.3f} | Test Acc: {test_acc*100:.2f}')
-        predict_randomly(best_enc, best_dec, './aksharantar_sampled/tam/tam_test.csv', n=5)
+        # for epoch in range(epochs):
+        #     output, test_loss, test_acc = test_fn(best_model, test_loader, BEAM_SIZE)
+        #     print(f'Epoch: {epoch+1} | Test Loss: {test_loss:.3f} | Test Acc: {test_acc*100:.2f}')
+        # predict_randomly(best_enc, best_dec, './aksharantar_sampled/tam/tam_test.csv', n=5)
 
         print("Attention model")
         for epoch in range(epochs):
@@ -539,10 +540,12 @@ if __name__ == '__main__':
             print(f'Epoch: {epoch+1} | Test Loss: {test_loss:.3f} | Test Acc: {test_acc*100:.2f}')
         # predict_randomly(best_attn_enc, best_attn_dec, './aksharantar_sampled/tam/tam_test.csv', n=5)
         # predict_randomly_beam_search(best_enc, best_dec, './aksharantar_sampled/tam/tam_test.csv', beam_size=3)
-        for i in range(1, 6):
-            visualize_model_outputs(best_enc, best_dec, './aksharantar_sampled/tam/tam_test.csv', n=10)
+        # for i in range(1, 6):
+        #     visualize_model_outputs(best_enc, best_dec, './aksharantar_sampled/tam/tam_test.csv', n=10)
+
+        # to write predictions in a csv file
         # test_translate(best_enc, best_dec, './aksharantar_sampled/tam/tam_test.csv', './predictions_vanilla.csv')
-        # test_translate(best_attn_enc, best_attn_dec, './aksharantar_sampled/tam/tam_test.csv', './predictions_attention.csv')
+        test_translate(best_attn_enc, best_attn_dec, './aksharantar_sampled/tam/tam_test.csv', './predictions_attention.csv')
 
     else:    
         for epoch in range(N_EPOCHS):

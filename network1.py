@@ -163,29 +163,6 @@ class Seq2Seq(nn.Module):
             x = target[t] if random.random() < teacher_force_ratio else best_guess
         best_guesses = torch.tensor(best_guesses).to(device).permute(1,0)  # (batch_size, trg_len)
         return outputs, best_guesses
-
-    ############ GREEDY SEARCH ############
-    # def greedy_search_decoder(self, src, trg):
-    #         '''
-    #         :param target_tensor: target indexes tensor of shape [B, T] where B is the batch size and T is the maximum length of the output sentence
-    #         :param decoder_hidden: input tensor of shape [1, B, H] for start of the decoding
-    #         :param encoder_outputs: if you are using attention mechanism you can pass encoder outputs, [T, B, H] where T is the maximum length of input sentence
-    #         :return: decoded_batch
-    #         '''
-    #         encoder_outputs, decoder_hidden, cell = self.encoder(src)
-    #         seq_len, batch_size = trg.size()
-    #         decoded_batch = torch.zeros((batch_size, seq_len))
-    #         decoder_input = Variable(trg.data[0, :]) # [batch_size]
-    #         for t in range(seq_len):
-    #             decoder_output, decoder_hidden, _ = self.decoder(decoder_input, decoder_hidden, encoder_outputs)
-
-    #             topv, topi = decoder_output.data.topk(1)  
-    #             topi = topi.view(-1)
-    #             decoded_batch[:, t] = topi
-
-    #             decoder_input = topi.detach().view(-1)  
-            
-    #         return decoded_batch  # [batch_size, seq_len]
     
     ############ GREEDY SEARCH ############
     def greedy_search_decoder(self, post):
