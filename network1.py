@@ -86,6 +86,7 @@ class Decoder(nn.Module):
             self.rnn = nn.RNN(embedding_size, hidden_size, num_layers, dropout=p)
 
         self.fc = nn.Linear(hidden_size, output_size)
+        self.softmax_layer = nn.Softmax(dim=2)
 
     def forward(self, x, hidden, cell=None):
         # x shape: (N) where N is for batch size, we want it to be (1, N), seq_length
@@ -103,10 +104,11 @@ class Decoder(nn.Module):
             outputs, hidden = self.rnn(embedding, hidden)
             cell = None
 
-        predictions = self.fc(outputs)
+        predictions = self.softmax_layer(self.fc(outputs))
+        # predictions = self.fc(outputs)
 
-        # predictions shape: (1, N, length_target_vocabulary) to send it to
-        # loss function we want it to be (N, length_target_vocabulary) so we're
+        # predictions shape: (1, batch_size, length_target_vocabulary) to send it to
+        # loss function we want it to be (batch_size, length_target_vocabulary) so we're
         # just gonna remove the first dim
         predictions = predictions.squeeze(0) # (batch_size, trg_vocab_size) 
 
@@ -122,31 +124,35 @@ class Seq2Seq(nn.Module):
         self.eos_token_id = 2
 
     def forward(self, source, target, teacher_force_ratio=0.5):
+        # source shape: (trg_len, batch_size)
+        # target shape: (trg_len, batch_size)
         batch_size = source.shape[1]
         target_len = target.shape[0]
         target_vocab_size = self.decoder.fc.out_features
 
         outputs = torch.zeros(target_len, batch_size, target_vocab_size).to(device)
 
-        encoder_outputs, hidden, cell = self.encoder(source)
+        # create a list to store best guesses of size batch_size
+        best_guesses = []
 
+        encoder_outputs, hidden, cell = self.encoder(source)
         # Grab the first input to the Decoder which will be <SOS> token
-        x = target[1]
+        x = target[0]
 
         for t in range(1, target_len):
             # Use previous hidden, cell as context from encoder at start
             # x shape: (batch_size)
-            # hidden shape: (num_layers * num_directions, batch_size, hidden_size)
-            # cell shape: (num_layers * num_directions, batch_size, hidden_size)
+            # hidden shape: (num_layers * num_directions, trg_len, hidden_size)
+            # cell shape: (num_layers * num_directions, trg_len, hidden_size)
             output, hidden, cell = self.decoder(x, hidden, cell)
-            # outputs shape: (batch_size, vocab_size)
-
-
+            # output shape: (batch_size, vocab_size)
+            
             # Store next output prediction
             outputs[t] = output
 
             # Get the best word the Decoder predicted (index in the vocabulary)
-            best_guess = output.argmax(1)
+            best_guess = output.argmax(1)  
+            best_guesses.append(best_guess.detach().cpu().numpy())
 
         # With probability of teacher_force_ratio we take the actual next word
             # otherwise we take the word that the Decoder predicted it to be.
@@ -155,31 +161,72 @@ class Seq2Seq(nn.Module):
             # then inputs at test time might be completely different than what the
             # network is used to. This was a long comment.
             x = target[t] if random.random() < teacher_force_ratio else best_guess
-        
-        return outputs
+        best_guesses = torch.tensor(best_guesses).to(device).permute(1,0)  # (batch_size, trg_len)
+        return outputs, best_guesses
 
     ############ GREEDY SEARCH ############
-    def greedy_search_decoder(self, src, trg):
-            '''
-            :param target_tensor: target indexes tensor of shape [B, T] where B is the batch size and T is the maximum length of the output sentence
-            :param decoder_hidden: input tensor of shape [1, B, H] for start of the decoding
-            :param encoder_outputs: if you are using attention mechanism you can pass encoder outputs, [T, B, H] where T is the maximum length of input sentence
-            :return: decoded_batch
-            '''
-            encoder_outputs, decoder_hidden, cell = self.encoder(src)
-            seq_len, batch_size = trg.size()
-            decoded_batch = torch.zeros((batch_size, seq_len))
-            decoder_input = Variable(trg.data[0, :]) # [batch_size]
-            for t in range(seq_len):
-                decoder_output, decoder_hidden, _ = self.decoder(decoder_input, decoder_hidden, encoder_outputs)
+    # def greedy_search_decoder(self, src, trg):
+    #         '''
+    #         :param target_tensor: target indexes tensor of shape [B, T] where B is the batch size and T is the maximum length of the output sentence
+    #         :param decoder_hidden: input tensor of shape [1, B, H] for start of the decoding
+    #         :param encoder_outputs: if you are using attention mechanism you can pass encoder outputs, [T, B, H] where T is the maximum length of input sentence
+    #         :return: decoded_batch
+    #         '''
+    #         encoder_outputs, decoder_hidden, cell = self.encoder(src)
+    #         seq_len, batch_size = trg.size()
+    #         decoded_batch = torch.zeros((batch_size, seq_len))
+    #         decoder_input = Variable(trg.data[0, :]) # [batch_size]
+    #         for t in range(seq_len):
+    #             decoder_output, decoder_hidden, _ = self.decoder(decoder_input, decoder_hidden, encoder_outputs)
 
-                topv, topi = decoder_output.data.topk(1)  
-                topi = topi.view(-1)
-                decoded_batch[:, t] = topi
+    #             topv, topi = decoder_output.data.topk(1)  
+    #             topi = topi.view(-1)
+    #             decoded_batch[:, t] = topi
 
-                decoder_input = topi.detach().view(-1)  
+    #             decoder_input = topi.detach().view(-1)  
             
-            return decoded_batch  # [batch_size, seq_len]
+    #         return decoded_batch  # [batch_size, seq_len]
+    
+    ############ GREEDY SEARCH ############
+    def greedy_search_decoder(self, post):
+        """Greedy Search Decoder
+
+        Parameters:
+
+            post(Tensor) – the posterior of network.
+
+        Outputs:
+
+            indices(Tensor) – the index sequence.
+            log_prob(Tensor) – the log likelihood of sequence.
+
+        Shape:
+
+            post: (batch_size, seq_length, vocab_size).
+            indices: (batch_size, seq_length).
+            log_prob: (batch_size,).
+
+        Examples:
+
+            >>> post = torch.softmax(torch.randn([32, 20, 1000]), -1)
+            >>> indices, log_prob = greedy_search_decoder(post)
+
+        """
+        post = post.permute(0, 2, 1)  # (batch_size, seq_length, vocab_size)
+        post = torch.softmax(post, dim=-1)
+        batch_size, seq_length, vocab_size = post.shape
+        log_post = post.log()
+        indices = torch.zeros((batch_size, seq_length), dtype=torch.long)
+        log_prob = 0.0
+
+        for i in range(seq_length):
+            output_prob = post[:, i, :]
+            output_token = output_prob.argmax(dim=-1)
+            indices[:, i] = output_token
+            log_prob += log_post[:, i, :].gather(1, output_token.unsqueeze(-1)).squeeze(-1)
+
+        # indices: (batch_size, seq_length)
+        return indices, log_prob
 
     ############ BEAM SEARCH ############
     def beam_search_decoder(self, post, k=5):
@@ -207,7 +254,7 @@ class Seq2Seq(nn.Module):
             >>> indices, log_prob = beam_search_decoder(post, 3)
 
         """
-        post = post.permute(0, 2, 1)  # (batch_size, seq_length, vocab_size)
+        post = post.permute(2, 0, 1)  # (batch_size, seq_length, vocab_size)
         post = torch.softmax(post, dim=-1)
         batch_size, seq_length, vocab_size = post.shape
         log_post = post.log()

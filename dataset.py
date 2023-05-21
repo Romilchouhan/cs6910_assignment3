@@ -58,6 +58,7 @@ class CustomDataset(Dataset):
                 if letter not in word_to_index:
                     letter = '<UNK>'
                 totensor.append(word_to_index[letter])
+        totensor.append(word_to_index['<EOS>'])
         return totensor
 
     def read_data(self, file):

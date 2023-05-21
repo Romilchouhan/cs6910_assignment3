@@ -14,6 +14,15 @@ import atexit
 from tqdm import tqdm
 import warnings
 import argparse 
+import matplotlib.pyplot as plt
+from sklearn.metrics import confusion_matrix
+import pandas as pd
+from wordcloud import WordCloud
+from colour import Color
+from collections import Counter
+import os
+import PIL
+from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
 warnings.filterwarnings("ignore")
 torch.cuda.empty_cache()
 
@@ -42,6 +51,7 @@ parser.add_argument('--cell_type', type=str, default='gru', help='choices: [LSTM
 parser.add_argument('--bidirectional', type=str, default='False', help='choices: [True, False]')
 parser.add_argument('--beam_size', type=int, default=5, help='beam size for beam search')
 parser.add_argument('--attention', type=str, default='False', help='choices: [True, False]')
+parser.add_argument('--test', type=str, default='False', help='choices: [True, False]')
 parser.add_argument('--wandb', type=str, default='False', help='choices: [True, False]')
 args = parser.parse_args()
 
@@ -108,46 +118,51 @@ optimizer = optim.Adam(model.parameters())
 # define a function to calculate the accuracy of the model
 def calculate_accuracy(predicted_output, trg):
     predicted_output = predicted_output.view(trg.shape[0], trg.shape[1])
-    # print("This is the shape of trg: ", trg.shape)
-    # print("This is the shape of predicted_output: ", predicted_output.shape)
     non_pad_elements = (trg != 0).nonzero()  # Find the indices of non-padding elements in the target tensor
-    # print("This is the shape of non_pad_elements: ", non_pad_elements.shape)
-    # print("This is the shape of non_pad_elements[:, 0]: ", non_pad_elements[:, 0].shape)
-    # correct_elements = predicted_output[non_pad_elements[:, 0]].eq(trg[non_pad_elements[:, 0]]).sum().item()
     correct_elements = predicted_output[non_pad_elements].eq(trg[non_pad_elements]).sum().item()
     total_elements = trg.numel()
     accuracy = correct_elements / total_elements 
     return accuracy
 
+def word_accuracy(prediction, trg):
+    correct = 0
+    for i in range(trg.shape[1]):
+        correct += (prediction[:,i]==trg[:,i]).sum().item()
+    return correct / trg.shape[1]
+
 def compute_loss(preds, trg):
     trg_vocab_size = preds.shape[1]
-    logits = preds.permute(0, 1, 2)
-    logits = logits.contiguous().view(-1, trg_vocab_size)  
-    target_seq = trg.contiguous().view(-1)
-
-    predicted_output = torch.argmax(logits, dim=1)
+    logits = preds.permute(0, 2, 1)
+    logits = logits.contiguous().view(-1, trg_vocab_size)  # [batch_size * trg_len, trg_vocab_size]
+    target_seq = trg.contiguous().view(-1) # [batch_size * trg_len]
+    predicted_output = torch.argmax(logits, dim=1) # [batch_size * trg_len]
     cross_entropy_loss = F.cross_entropy(logits, target_seq, ignore_index=0)
     return cross_entropy_loss, predicted_output
+
 
 def train_fn(model, iterator, optimizer, clip):
     model.train()
     epoch_loss = 0
     epoch_acc = 0
+    epoch_word_acc = 0
     print("THIS IS TRAINING LOOP")
     # use tqdm to show the progress bar
     for i, batch in enumerate(tqdm(iterator)):
         src = batch[0].to(device)  # [batch_size, src_len]
         trg = batch[1].to(device)  # [batch_size, trg_len] 
         # swap the axes to match the input format
-        # src = src.permute(1, 0)  
-        # trg = trg.permute(1, 0)  
+        src = src.permute(1, 0)  
+        trg = trg.permute(1, 0)   # [trg_len, batch_size]
         optimizer.zero_grad()
 
         #### WITHOUTH BEAM SEARCH ####
-        output = model(src, trg, args.teacher_forcing_ratio) 
+        output, best_guess = model(src, trg, args.teacher_forcing_ratio) 
         output = output.permute(1, 2, 0)  # [batch_size, target_vocab_size, trg_len]
         loss, preds = compute_loss(output.to(device), trg.to(device))
-        accuracy = calculate_accuracy(preds, trg)
+        best_guess = best_guess.permute(1, 0)  # [trg_len, batch_size]
+        word_acc = word_accuracy(best_guess, trg[1:, :])
+        epoch_word_acc += word_acc
+        accuracy = calculate_accuracy(preds, trg.permute(1, 0))
         preds = torch.argmax(output, dim=1)  # Get the predicted labels by taking the argmax along the output dimension
         loss = Variable(loss, requires_grad=True)
         loss.backward()
@@ -156,6 +171,7 @@ def train_fn(model, iterator, optimizer, clip):
         epoch_loss += loss.item()
         epoch_acc += accuracy
 
+    print("Epoch Word accuracy: ", (epoch_word_acc / len(iterator)) * 100)
     print("THIS IS TRAINING LOOP END")
     print("\n\n")
     return epoch_loss / len(iterator), epoch_acc / len(iterator)
@@ -164,23 +180,26 @@ def evaluate(model, iterator, beam_size=1):
     model.eval()
     epoch_loss = 0
     epoch_acc = 0
+    epoch_word_acc = 0
     print("THIS IS EVALUATION LOOP")
     with torch.no_grad():
         for i, batch in enumerate(tqdm(iterator)):
             src = batch[0].to(device)
             trg = batch[1].to(device)
             # swap the axes to match the input format
-            # src = src.permute(1, 0)
-            # trg = trg.permute(1, 0)
-            output = model(src, trg, 0.5) 
-            output = output.permute(1, 2, 0)  # output = [batch_size, target_vocab_size, trg_len]
+            src = src.permute(1, 0)
+            trg = trg.permute(1, 0)
+            output, best_guess = model(src, trg, 0.5) 
+            output = output.permute(1, 2, 0)
             loss, preds = compute_loss(output.to(device), trg.to(device))
-            word_acc = calculate_accuracy(preds, trg)       
-            # preds = best_indices
+            best_guess = best_guess.permute(1, 0)  # [trg_len, batch_size]
+            word_acc = word_accuracy(best_guess, trg[1:, :])
+            accuracy = calculate_accuracy(preds, trg.permute(1, 0))
+            epoch_word_acc += word_acc
             epoch_loss += loss.item()
-            epoch_acc += word_acc
-            # use beam search to decode
+            epoch_acc += accuracy
             best_indices, _ = model.beam_search_decoder(output, beam_size)
+    print("Epoch Word accuracy: ", (epoch_word_acc / len(iterator)) * 100)
     print("THIS IS EVALUATION LOOP END")
     print("\n\n")
     return epoch_loss / len(iterator), epoch_acc / len(iterator)
@@ -233,6 +252,234 @@ def train_wb(config = sweep_config):
                     "val_acc": val_acc*100})
 
 
+def test_fn(model, iterator, beam_size=1):
+    model.eval()
+    epoch_loss = 0
+    epoch_acc = 0
+    epoch_word_acc = 0
+    print("THIS IS TESTING LOOP")
+    with torch.no_grad():
+        for i, batch in enumerate(tqdm(iterator)):
+            src = batch[0].to(device)
+            trg = batch[1].to(device)
+            src = src.permute(1, 0)
+            trg = trg.permute(1, 0)
+            output, best_guess = model(src, trg, 0.5)
+            best_guess = best_guess.permute(1, 0)
+            output = output.permute(1, 2, 0)  # output = [batch_size, target_vocab_size, trg_len]
+            loss, preds = compute_loss(output.to(device), trg.to(device))
+            
+            acc = calculate_accuracy(preds, trg.permute(1, 0))
+            epoch_loss += loss.item()
+            word_acc = word_accuracy(best_guess, trg[1:, :])
+            epoch_acc += acc
+            epoch_word_acc += word_acc
+            # use beam search to decode
+            best_indices, _ = model.beam_search_decoder(output, beam_size)  # best_indices = [trg_len, batch_size]
+        print("Epoch Word accuracy: ", epoch_word_acc / len(iterator))
+        print("THIS IS TESTING LOOP END")
+        print("\n\n")
+        return output, epoch_loss / len(iterator), epoch_acc / len(iterator)
+
+def indexesFromWord(lang, word):
+    print()
+    ret = [1]
+    if lang == 'en':
+        for char in word:
+            if char not in src_word_to_idx_train.keys():
+                ret.append(src_word_to_idx_train['<UNK>'])
+            else:
+                ret.append(src_word_to_idx_train[char])
+    else:
+        for char in word:
+            if char not in tgt_word_to_idx_train.keys():
+                ret.append(tgt_word_to_idx_train['<UNK>'])
+            else:
+                ret.append(tgt_word_to_idx_train[char])
+    return ret
+    
+def tensorsFromWord(lang, word):
+    indexes = indexesFromWord(lang, word)
+    indexes.append(2) # append <EOS> token
+    return torch.tensor(indexes, dtype=torch.long, device=device).view(-1, 1)
+
+def tensorsFromPair(pair):
+    input_tensor = tensorsFromWord('en', pair[0])
+    target_tensor = tensorsFromWord('tam', pair[1])
+    return (input_tensor, target_tensor)
+        
+
+# define a function that translates a batch of words in source language to target language
+def predict(encoder, decoder, word):
+    with torch.no_grad():
+        input_tensor = tensorsFromWord('en', word[0])
+        target_tensor = tensorsFromWord('tam', word[1])    
+        # input_tensor, target_tensor = tensorsFromPair(word)
+        max_length = max(input_tensor.size(0), target_tensor.size(0))
+        if input_tensor.size(0) < max_length:
+            input_tensor = torch.cat((input_tensor, torch.zeros(max_length - input_tensor.size(0), 1, dtype=torch.long, device=device)), dim=0)
+        if target_tensor.size(0) < max_length:
+            target_tensor = torch.cat((target_tensor, torch.zeros(max_length - target_tensor.size(0), 1, dtype=torch.long, device=device)), dim=0)
+        input_tensor = input_tensor.permute(1, 0)
+        input_length = input_tensor.size(0)
+        encoder_outputs = torch.zeros(max_length, encoder.hidden_size, device=device)
+        encoder_outputs, encoder_hidden, encoder_cell = encoder(input_tensor)
+
+        decoder_input = target_tensor[:, 0]
+        decoder_hidden = encoder_hidden
+        decoder_cell = encoder_cell
+        decoded_words = []
+        for di in range(max_length):
+            # add batch dimension to decoder_hidden and decoder_cell
+            decoder_output, decoder_hidden, decoder_cell = decoder(decoder_input, decoder_hidden, decoder_cell)
+            # decoder_output = [trg_len, trg_vocab_size]
+            prediction = torch.argmax(decoder_output, dim=1)
+            topv, topi = prediction.data.topk(1)
+            if topi.item() == 2:
+                # if the predicted word is <EOS> token, then stop predicting
+                break
+            else:
+                decoded_words.append(tgt_idx_to_word_train[topi.item()]) 
+            decoder_input = prediction.squeeze().detach()
+        return decoded_words
+    
+def predict_randomly(encoder, decoder, data_path, n=10):
+    df = pd.read_csv(data_path, sep=',', header=None, names=['text', 'label'])
+    df = df.sample(n).reset_index(drop=True)
+    word_acc = 0
+    for i in range(n):
+        word = df['text'][i]
+        target_word = df['label'][i]
+        word1 = (word, target_word)
+        input_tensor = tensorsFromWord('en', word)
+        target_tensor = tensorsFromWord('tam', target_word)
+        output_words = predict(encoder, decoder, word1)
+        output_sentence = ' '.join(output_words)
+        if output_sentence == target_word:
+            word_acc += 1
+        print("Input word: ", word)
+        print("Translated word: ", target_word)
+        print("Predicted word: ", output_sentence)
+        print("\n")
+    word_acc = word_acc / n
+    print("Word accuracy: ", word_acc)
+    print("\n\n")
+    return output_sentence
+
+def translate(encoder, decoder, word):
+    output_words = predict(encoder, decoder, word)
+    output_sentence = ' '.join(output_words)
+    return output_sentence
+
+def predict_beam_search(encoder, decoder, word, max_length=50, beam_size=3):
+    with torch.no_grad():
+        input_tensor = tensorsFromWord('en', word)
+        target_tensor = tensorsFromWord('tam', word)    
+        input_tensor = input_tensor.permute(1, 0)
+        input_length = input_tensor.size(0)
+        encoder_outputs = torch.zeros(max_length, encoder.hidden_size, device=device)
+        encoder_outputs, encoder_hidden, encoder_cell = encoder(input_tensor)
+
+        decoder_input = target_tensor[:, 0]
+        decoder_hidden = encoder_hidden
+        decoder_cell = encoder_cell
+        decoded_words = []
+        for di in range(max_length):
+            # add batch dimension to decoder_hidden and decoder_cell
+            decoder_output, decoder_hidden, decoder_cell = decoder(decoder_input, decoder_hidden, decoder_cell)
+            # decoder_output = [trg_len, trg_vocab_size]
+            beam_input = decoder_output.unsqueeze(0) # [1, trg_len, trg_vocab_size]
+            beam_input = beam_input.permute(1, 2, 0)
+            best_indices, _ = model.beam_search_decoder(beam_input, beam_size)
+            prediction = best_indices.squeeze(0)
+            topv, topi = prediction.data.topk(1)
+            if topi.item() == 2:
+                # if the predicted word is <EOS> token, then stop predicting
+                break
+            else:
+                decoded_words.append(tgt_idx_to_word_train[topi.item()]) 
+            decoder_input = prediction.squeeze().detach()
+        return decoded_words
+
+def predict_randomly_beam_search(encoder, decoder, data_path, beam_size):
+    df = pd.read_csv(data_path, sep=',', header=None, names=['text', 'label'])
+    word = df['text'].sample(1).values[0]
+    target_word = df['label'].sample(1).values[0]
+    output_words = predict_beam_search(encoder, decoder, word, len(target_word)+2, beam_size)
+    output_sentence = ' '.join(output_words)
+    print("Input word: ", word)
+    print("Translated word: ", target_word)
+    print("Predicted word: ", output_sentence)
+    print("\n\n")
+    return output_sentence
+
+# Visualize model outputs
+def get_colors(inputs, targets, preds):
+
+    n = len(targets)
+    smoother = SmoothingFunction().method2
+    def get_scores(target, output, smoother):
+        return sentence_bleu(list(list(target)), list(output), smoothing_function=smoother)
+
+    red = Color("red")
+    colors = list(red.range_to(Color("violet"),n))
+    colors = list(map(lambda c: c.hex, colors))
+
+    scores = []
+    for i in range(n):
+        scores.append(get_scores(targets[i], preds[i], smoother))
+
+    d = dict(zip(sorted(scores), list(range(n))))
+    ordered_colors = list(map(lambda x: colors[d[x]], scores))
+    
+    input_colors = dict(zip(inputs, ordered_colors))
+    target_colors = dict(zip(targets, ordered_colors))
+    pred_colors = dict(zip(preds, ordered_colors))
+
+    return input_colors, target_colors, pred_colors
+
+class Colorizer():
+    def __init__(self, word_to_color, default_color):
+       
+        self.word_to_color = word_to_color
+        self.default_color = default_color
+
+    def __call__(self, word, **kwargs):
+        return self.word_to_color.get(word, self.default_color)
+
+def visualize_model_outputs(encoder, decoder, data_path, n=10):
+    df = pd.read_csv(data_path, sep=',', header=None, names=['text', 'label'])
+    df = df.sample(n).reset_index(drop=True)
+
+    inputs = df['text'].astype(str).tolist()
+    targets = df['label'].astype(str).tolist()
+    preds = list(map(lambda x: translate(encoder, decoder, x), inputs))
+    
+    # Generate colors for each word
+    input_colors, target_colors, pred_colors = get_colors(inputs, targets, preds)
+    color_fn_ip = Colorizer(input_colors, "white")
+    color_fn_tr = Colorizer(target_colors, "white")
+    color_fn_op = Colorizer(pred_colors, "white")
+
+    input_text = Counter(inputs)
+    target_text = Counter(targets)
+    pred_text = Counter(preds)
+    fig, axs = plt.subplots(1,2, figsize=(30, 15))
+    plt.tight_layout()
+    font_path = "/usr/share/fonts/truetype/lohit-tamil/Lohit-Tamil.ttf"
+    wc_in = WordCloud(width=800, height=400, background_color='black').generate_from_frequencies(input_text)
+    wc_out = WordCloud(font_path=font_path,width=800, height=400, background_color='black').generate_from_frequencies(target_text)
+    wc_tar = WordCloud(width=800, height=400, background_color='black').generate_from_frequencies(pred_text)
+
+    axs[0].set_title("Input words", fontsize=30)
+    axs[0].imshow(wc_in.recolor(color_func=color_fn_ip))
+    # axs[1].set_title("Target words", fontsize=30)
+    # axs[1].imshow(wc_tar.recolor(color_func=color_fn_tr))
+    axs[1].set_title("Model outputs", fontsize=30)
+    axs[1].imshow(wc_out.recolor(color_func=color_fn_op))
+    plt.show()
+
+
 def print_execution_time():
     end_time = time.time()
     print("Execution time: ", (end_time - start_time) / 60, " minutes")
@@ -244,8 +491,28 @@ if __name__ == '__main__':
     if args.wandb == 'True':
         wandb.login(key="b3a089bfb32755711c3923f3e6ef67c0b0d2409b")
         sweep_id = wandb.sweep(sweep_config, project="A3 trial tamil attention gpu")
-        wandb.agent(sweep_id, train_wb, count=120)
-        
+        wandb.agent(sweep_id, train_wb, count=50)
+
+    elif args.test == 'True':
+        # define the best model 
+        num_layers = 2
+        hidden_size = 512 
+        embedding_size = 256
+        batch_size = 128
+        dropout = 0.5
+        bidirectional = False
+        cell_type = 'LSTM'
+        epochs = 1
+        best_enc = Encoder(INPUT_DIM, embedding_size, hidden_size, num_layers, dropout, cell_type, bidirectional)
+        best_dec = Decoder(embedding_size, hidden_size, OUTPUT_DIM, num_layers, dropout, cell_type, bidirectional)
+        best_model = Seq2Seq(best_enc, best_dec).to(device)
+        # for epoch in range(epochs):
+        #     output, test_loss, test_acc = test_fn(best_model, test_loader, BEAM_SIZE)
+        #     print(f'Epoch: {epoch+1} | Test Loss: {test_loss:.3f} | Test Acc: {test_acc*100:.2f}')
+        predict_randomly(best_enc, best_dec, './aksharantar_sampled/tam/tam_test.csv', n=5)
+        # predict_randomly_beam_search(best_enc, best_dec, './aksharantar_sampled/tam/tam_test.csv', beam_size=3)
+        visualize_model_outputs(best_enc, best_dec, './aksharantar_sampled/tam/tam_test.csv', n=10)
+
     else:    
         for epoch in range(N_EPOCHS):
             train_loss, train_acc = train_fn(model, train_loader, optimizer, CLIP)
