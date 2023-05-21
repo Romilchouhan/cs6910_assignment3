@@ -95,13 +95,13 @@ class Decoder(nn.Module):
 
         energy = self.relu(self.energy(torch.cat((h_reshaped, encoder_states), dim=2)))
         # energy: (seq_length, N, 1)
-        attention = self.softmax(energy)
+        self.attention = self.softmax(energy)  # attention weights
         # attention: (seq_length, N, 1)
 
         # attention: (seq_length, N, 1), snk
         # encoder_states: (seq_length, N, hidden_size*2), snl
         # we want context_vector: (1, N, hidden_size*2), i.e knl
-        context_vector = torch.einsum("snk,snl->knl", attention, encoder_states)
+        context_vector = torch.einsum("snk,snl->knl", self.attention, encoder_states)
 
         rnn_input = torch.cat((context_vector, embedding), dim=2)
         # rnn_input: (1, N, hidden_size*2 + embedding_size)
@@ -118,6 +118,9 @@ class Decoder(nn.Module):
 
         return predictions, hidden, cell
     
+    def attn_weights(self):
+        return self.attention
+    
 
 class Seq2Seq(nn.Module):
     def __init__(self, encoder, decoder):
@@ -133,6 +136,9 @@ class Seq2Seq(nn.Module):
         outputs = torch.zeros(target_len, batch_size, target_vocab_size).to(device)
         encoder_states, hidden, cell = self.encoder(source)
 
+        # create a list to store best guess 
+        best_guesses = []
+
         # First input will be <SOS> token
         x = target[1]
 
@@ -145,6 +151,7 @@ class Seq2Seq(nn.Module):
 
             # Get the best word the Decoder predicted (index in the vocabulary)
             best_guess = output.argmax(1)
+            best_guesses.append(best_guess.detach().cpu().numpy())
 
             # With probability of teacher_force_ratio we take the actual next word
             # otherwise we take the word that the Decoder predicted it to be.
@@ -152,8 +159,8 @@ class Seq2Seq(nn.Module):
             # similar inputs at training and testing time, if teacher forcing is 1
 
             x = target[t] if random.random() < teacher_force_ratio else best_guess
-
-        return outputs
+        best_guesses = torch.tensor(best_guesses).to(device).permute(1, 0)
+        return outputs, best_guesses
     
     def decode(self, src, trg, method='beam-search'):
         encoder_output, hidden, cell = self.encoder(src)
