@@ -485,17 +485,15 @@ def visualize_model_outputs(encoder, decoder, data_path, n=10):
     input_text = Counter(inputs)
     target_text = Counter(targets)
     pred_text = Counter(preds)
-    fig, axs = plt.subplots(1,2, figsize=(30, 15))
+    fig, axs = plt.subplots(1,2, figsize=(15, 10))
     plt.tight_layout()
     font_path = "/usr/share/fonts/truetype/lohit-tamil/Lohit-Tamil.ttf"
     wc_in = WordCloud(width=800, height=400, background_color='black').generate_from_frequencies(input_text)
     wc_out = WordCloud(font_path=font_path,width=800, height=400, background_color='black').generate_from_frequencies(target_text)
-    wc_tar = WordCloud(width=800, height=400, background_color='black').generate_from_frequencies(pred_text)
+    wc_tar = WordCloud(font_path=font_path,width=800, height=400, background_color='black').generate_from_frequencies(pred_text)
 
     axs[0].set_title("Input words", fontsize=30)
     axs[0].imshow(wc_in.recolor(color_func=color_fn_ip))
-    # axs[1].set_title("Target words", fontsize=30)
-    # axs[1].imshow(wc_tar.recolor(color_func=color_fn_tr))
     axs[1].set_title("Targets", fontsize=30)
     axs[1].imshow(wc_out.recolor(color_func=color_fn_op))
     plt.show()
@@ -533,10 +531,16 @@ if __name__ == '__main__':
         for epoch in range(epochs):
             output, test_loss, test_acc = test_fn(best_model, test_loader, BEAM_SIZE)
             print(f'Epoch: {epoch+1} | Test Loss: {test_loss:.3f} | Test Acc: {test_acc*100:.2f}')
-        predict_randomly(best_enc, best_dec, './aksharantar_sampled/tam/tam_test.csv', n=5, attention=False)
-        predict_randomly(best_attn_enc, best_attn_dec, './aksharantar_sampled/tam/tam_test.csv', n=5)
+        predict_randomly(best_enc, best_dec, './aksharantar_sampled/tam/tam_test.csv', n=5)
+
+        print("Attention model")
+        for epoch in range(epochs):
+            output, test_loss, test_acc = test_fn(best_attn_model, test_loader, BEAM_SIZE)
+            print(f'Epoch: {epoch+1} | Test Loss: {test_loss:.3f} | Test Acc: {test_acc*100:.2f}')
+        # predict_randomly(best_attn_enc, best_attn_dec, './aksharantar_sampled/tam/tam_test.csv', n=5)
         # predict_randomly_beam_search(best_enc, best_dec, './aksharantar_sampled/tam/tam_test.csv', beam_size=3)
-        # visualize_model_outputs(best_enc, best_dec, './aksharantar_sampled/tam/tam_test.csv', n=10)
+        for i in range(1, 6):
+            visualize_model_outputs(best_enc, best_dec, './aksharantar_sampled/tam/tam_test.csv', n=10)
         # test_translate(best_enc, best_dec, './aksharantar_sampled/tam/tam_test.csv', './predictions_vanilla.csv')
         # test_translate(best_attn_enc, best_attn_dec, './aksharantar_sampled/tam/tam_test.csv', './predictions_attention.csv')
 
