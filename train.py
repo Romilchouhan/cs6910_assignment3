@@ -22,6 +22,7 @@ from colour import Color
 from collections import Counter
 import os
 import PIL
+import csv
 from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
 warnings.filterwarnings("ignore")
 torch.cuda.empty_cache()
@@ -224,7 +225,7 @@ sweep_config = {
 
 # objective function for wandb sweep
 def train_wb(config = sweep_config):
-    wandb.init(project="A3 trial tamil attention gpu", config=config)
+    wandb.init(project="A3 trial last", config=config)
     config = wandb.config
     wandb.run.name = "epoch_{}_cell_{}_n-layers_{}_hidden-size_{}_emb-size_{}_batch-size_{}_dropout_{}_bidirectional_{}_beam_{}".format(config.epochs,
                                                                                                             config.cell_type,
@@ -356,7 +357,7 @@ def predict_randomly(encoder, decoder, data_path, n=10):
         output_words = predict(encoder, decoder, word1)
         output_sentence = ' '.join(output_words)
         if output_sentence == target_word:
-            word_acc += 1
+            word_acc += 1       
         print("Input word: ", word)
         print("Translated word: ", target_word)
         print("Predicted word: ", output_sentence)
@@ -365,6 +366,26 @@ def predict_randomly(encoder, decoder, data_path, n=10):
     print("Word accuracy: ", word_acc)
     print("\n\n")
     return output_sentence
+
+# get the output translation for the entire test set and save in csv file
+def test_translate(encoder, decoder, data_path, save_path):
+    df = pd.read_csv(data_path, sep=',', header=None, names=['text', 'label'])
+    for i in range(len(df)):
+        word = df['text'][i]
+        target_word = df['label'][i]
+        word1 = (word, target_word)
+        input_tensor = tensorsFromWord('en', word)
+        target_tensor = tensorsFromWord('tam', target_word)
+        output_words = predict(encoder, decoder, word1)
+        output_sentence = ' '.join(output_words)
+        # save the input word, target word and predicted word in a csv file
+        with open(save_path, 'a') as f:
+            writer = csv.writer(f)
+            writer.writerow([word, target_word, output_sentence])
+        # close the file
+        f.close()
+    return 
+
 
 def translate(encoder, decoder, word):
     output_words = predict(encoder, decoder, word)
@@ -475,7 +496,7 @@ def visualize_model_outputs(encoder, decoder, data_path, n=10):
     axs[0].imshow(wc_in.recolor(color_func=color_fn_ip))
     # axs[1].set_title("Target words", fontsize=30)
     # axs[1].imshow(wc_tar.recolor(color_func=color_fn_tr))
-    axs[1].set_title("Model outputs", fontsize=30)
+    axs[1].set_title("Targets", fontsize=30)
     axs[1].imshow(wc_out.recolor(color_func=color_fn_op))
     plt.show()
 
@@ -490,7 +511,7 @@ if __name__ == '__main__':
     # train the model
     if args.wandb == 'True':
         wandb.login(key="b3a089bfb32755711c3923f3e6ef67c0b0d2409b")
-        sweep_id = wandb.sweep(sweep_config, project="A3 trial tamil attention gpu")
+        sweep_id = wandb.sweep(sweep_config, project="A3 trial last")
         wandb.agent(sweep_id, train_wb, count=50)
 
     elif args.test == 'True':
@@ -502,16 +523,22 @@ if __name__ == '__main__':
         dropout = 0.5
         bidirectional = False
         cell_type = 'LSTM'
-        epochs = 1
+        epochs = 3
         best_enc = Encoder(INPUT_DIM, embedding_size, hidden_size, num_layers, dropout, cell_type, bidirectional)
         best_dec = Decoder(embedding_size, hidden_size, OUTPUT_DIM, num_layers, dropout, cell_type, bidirectional)
         best_model = Seq2Seq(best_enc, best_dec).to(device)
-        # for epoch in range(epochs):
-        #     output, test_loss, test_acc = test_fn(best_model, test_loader, BEAM_SIZE)
-        #     print(f'Epoch: {epoch+1} | Test Loss: {test_loss:.3f} | Test Acc: {test_acc*100:.2f}')
-        predict_randomly(best_enc, best_dec, './aksharantar_sampled/tam/tam_test.csv', n=5)
+        best_attn_enc = AttentionEncoder(INPUT_DIM, 512, 512, 2, 0.6, 'LSTM', False)
+        best_attn_dec = AttentionDecoder(512, 512, OUTPUT_DIM, 2, 0.6, 'LSTM', False)
+        best_attn_model = AttentionSeq2Seq(best_attn_enc, best_attn_dec).to(device)
+        for epoch in range(epochs):
+            output, test_loss, test_acc = test_fn(best_model, test_loader, BEAM_SIZE)
+            print(f'Epoch: {epoch+1} | Test Loss: {test_loss:.3f} | Test Acc: {test_acc*100:.2f}')
+        predict_randomly(best_enc, best_dec, './aksharantar_sampled/tam/tam_test.csv', n=5, attention=False)
+        predict_randomly(best_attn_enc, best_attn_dec, './aksharantar_sampled/tam/tam_test.csv', n=5)
         # predict_randomly_beam_search(best_enc, best_dec, './aksharantar_sampled/tam/tam_test.csv', beam_size=3)
-        visualize_model_outputs(best_enc, best_dec, './aksharantar_sampled/tam/tam_test.csv', n=10)
+        # visualize_model_outputs(best_enc, best_dec, './aksharantar_sampled/tam/tam_test.csv', n=10)
+        # test_translate(best_enc, best_dec, './aksharantar_sampled/tam/tam_test.csv', './predictions_vanilla.csv')
+        # test_translate(best_attn_enc, best_attn_dec, './aksharantar_sampled/tam/tam_test.csv', './predictions_attention.csv')
 
     else:    
         for epoch in range(N_EPOCHS):
